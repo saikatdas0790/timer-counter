@@ -1,5 +1,7 @@
 <script>
-	import '../app.css';
+  import "../app.css";
 </script>
 
-<slot />
+<div class="dark:bg-slate-700 min-h-screen">
+  <slot />
+</div>
