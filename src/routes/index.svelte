@@ -1,6 +1,11 @@
 <script lang="ts">
-  import AddNewTimerCounter from "$component/molecule/timer/AddNewTimerCounter.svelte";
-  import { addEmptyCounterTimerToList, type Timer } from "./_index";
+  import EmptyGrid from "$component/organism/timer-grid/EmptyGrid.svelte";
+  import TimersGrid from "$component/organism/timer-grid/TimersGrid.svelte";
+  import {
+    addEmptyCounterTimerToList,
+    setTimeForSpecificTimer,
+    type Timer,
+  } from "./_index";
 
   let timers: Timer[] = [];
 </script>
@@ -10,10 +15,14 @@
 </svelte:head>
 
 {#if timers.length === 0}
-  <div class="grid place-items-center min-h-screen">
-    <AddNewTimerCounter
-      on:click={() => (timers = addEmptyCounterTimerToList(timers))} />
-  </div>
+  <EmptyGrid on:click={() => (timers = addEmptyCounterTimerToList(timers))} />
 {:else}
-  <h1>Hello world</h1>
+  <TimersGrid
+    {timers}
+    on:addDuration={({ detail: { timer, buttonValue } }) =>
+      (timers = setTimeForSpecificTimer(
+        timers,
+        timer.id,
+        buttonValue.valueInSeconds,
+      ))} />
 {/if}
