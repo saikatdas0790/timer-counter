@@ -36,5 +36,9 @@
     "typescript": "~4.6.2",
     "vitest": "^0.10.2"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@xstate/svelte": "^2.0.0",
+    "xstate": "^4.32.0"
+  }
 }

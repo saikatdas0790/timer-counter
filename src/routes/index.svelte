@@ -1,28 +1,30 @@
 <script lang="ts">
+  import { useMachine } from "@xstate/svelte";
   import EmptyGrid from "$component/organism/timer-grid/EmptyGrid.svelte";
   import TimersGrid from "$component/organism/timer-grid/TimersGrid.svelte";
-  import {
-    addEmptyCounterTimerToList,
-    setTimeForSpecificTimer,
-    type Timer,
-  } from "./_index";
+  import { timerListMachine } from "./_index";
+  import TimerSkeletonGrid from "$component/organism/timer-grid/TimerSkeletonGrid.svelte";
 
-  let timers: Timer[] = [];
+  const { state, send } = useMachine(timerListMachine);
 </script>
 
 <svelte:head>
-  <title>Timer Home</title>
+  <title>Timer Counter</title>
 </svelte:head>
 
-{#if timers.length === 0}
-  <EmptyGrid on:click={() => (timers = addEmptyCounterTimerToList(timers))} />
-{:else}
-  <TimersGrid
-    {timers}
-    on:addDuration={({ detail: { timer, buttonValue } }) =>
-      (timers = setTimeForSpecificTimer(
-        timers,
-        timer.id,
-        buttonValue.valueInSeconds,
-      ))} />
+{#if $state.value === "loadingStateFromLocalDB"}
+  <TimerSkeletonGrid />
+{/if}
+
+{#if $state.value === "ready"}
+  {#if $state.context.timers.length === 0}
+    <EmptyGrid
+      on:click={() => {
+        send("NEW_TIMER_COUNTER_CREATED");
+      }} />
+  {:else}
+    <TimersGrid
+      timers={$state.context.timers}
+      on:newTimerCreated={() => send("NEW_TIMER_COUNTER_CREATED")} />
+  {/if}
 {/if}
