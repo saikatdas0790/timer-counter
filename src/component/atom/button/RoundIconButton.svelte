@@ -2,6 +2,6 @@
   export let className: string;
 </script>
 
-<button on:click class={className}>
+<button type="button" class={className} on:click>
   <slot />
 </button>

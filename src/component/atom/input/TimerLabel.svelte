@@ -1,0 +1,10 @@
+<script lang="ts">
+  export let textToDisplay: string;
+</script>
+
+<input
+  type="text"
+  class="block w-3/4 mx-auto outline-none text-2xl text-purple-300 text-center border-b border-transparent bg-transparent transition-colors duration-300 focus:border-purple-600 focus:ring-0"
+  maxlength="20"
+  value={textToDisplay}
+  on:input />
