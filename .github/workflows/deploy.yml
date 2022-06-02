@@ -1,8 +1,5 @@
 name: Run tests and deploy to mainnet on push to main
-on:
-  push:
-    branches:
-      - "main"
+on: push
 
 jobs:
   run-unit-tests:
