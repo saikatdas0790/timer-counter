@@ -30,7 +30,7 @@ jobs:
       - run: |
           touch actions_identity.pem
           echo "${{ secrets.ACTIONS_IDENTITY_SECRET }}" > actions_identity.pem
-          dfx identity import actions actions_identity.pem
+          dfx identity import --disable-encryption actions actions_identity.pem
           rm actions_identity.pem
           dfx identity use actions
       - run: dfx deploy --network ic --no-wallet
