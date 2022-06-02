@@ -1,0 +1,36 @@
+name: Run tests and deploy to mainnet on push to main
+on:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  run-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+      - run: npm install
+      - run: npm run test
+  mainnet-deploy:
+    runs-on: ubuntu-latest
+    needs: run-unit-tests
+    if: github.ref === "refs/head/main"
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+      - run: npm install
+      - run: npm run build
+      - run: DFX_VERSION=0.10.0 sh -ci "$(curl -fsSL https://smartcontracts.org/install.sh)"
+      - run: dfx identity list
+      - run: |
+          touch actions_identity.pem
+          echo "${{ secrets.ACTIONS_IDENTITY_SECRET }}" > actions_identity.pem
+          dfx identity import actions actions_identity.pem
+          rm actions_identity.pem
+          dfx identity use actions
+      - run: dfx deploy --network ic --no-wallet
