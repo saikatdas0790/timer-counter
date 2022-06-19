@@ -1,4 +1,8 @@
 <script>
+  import { Buffer } from "buffer";
+
+  window.global = window;
+  window.Buffer = Buffer;
   import "../app.css";
 </script>
 

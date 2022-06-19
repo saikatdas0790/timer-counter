@@ -1,6 +1,11 @@
 {
   "canisters": {
+    "backend_canister": {
+      "main": "src/canisters/backend/main.mo",
+      "type": "motoko"
+    },
     "frontend_canister": {
+      "dependencies": ["backend_canister"],
       "frontend": {
         "entrypoint": "index.html"
       },
@@ -14,7 +19,7 @@
       "packtool": ""
     }
   },
-  "dfx": "0.10.0",
+  "dfx": "0.10.1",
   "networks": {
     "local": {
       "bind": "127.0.0.1:8000",
