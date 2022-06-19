@@ -22,7 +22,7 @@ jobs:
           node-version: "16"
       - run: npm install
       - run: npm run build
-      - run: DFX_VERSION=0.10.0 sh -ci "$(curl -fsSL https://smartcontracts.org/install.sh)"
+      - run: DFX_VERSION=0.10.1 sh -ci "$(curl -fsSL https://smartcontracts.org/install.sh)"
       - run: dfx identity list
       - run: |
           touch actions_identity.pem
