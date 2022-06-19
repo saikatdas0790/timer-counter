@@ -15,7 +15,7 @@ import {
   createActor,
 } from "$canisters/backend_canister/index";
 import type { Principal } from "@dfinity/principal";
-import { unionWith } from "lodash";
+import unionWith from "lodash/unionWith";
 
 const timerListMachine = createMachine(
   {
@@ -140,7 +140,7 @@ const timerListMachine = createMachine(
             states: {
               ready: {
                 after: {
-                  5000: {
+                  30000: {
                     actions: "pushLocalStateToBackend",
                     target: "ready",
                   },
