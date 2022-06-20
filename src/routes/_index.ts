@@ -1,11 +1,5 @@
 import { timerCounterMachine } from "$components/molecule/timer/timer-counter/TimerCounter";
-import {
-  actions,
-  assign,
-  createMachine,
-  spawn,
-  type ActorRefFrom,
-} from "xstate";
+import { assign, createMachine, spawn, type ActorRefFrom } from "xstate";
 import { AuthClient } from "@dfinity/auth-client";
 import type { ActorSubclass, Identity } from "@dfinity/agent";
 import type { _SERVICE } from "$canisters/backend_canister/backend_canister.did";
@@ -34,11 +28,9 @@ const timerListMachine = createMachine(
         | { type: "LOGIN_INITIATED" }
         | { type: "MACHINE_STATE_LOADED" }
         | { type: "NEW_TIMER_COUNTER_CREATED" }
-        | { type: "TIMER_COUNTER_DELETE_RECEIVED"; timerId: string },
+        | { type: "TIMER_COUNTER_DELETE_RECEIVED"; timerId: string }
+        | { type: "TIMER_COUNTER_SYNCED"; timerId: string },
       services: {} as {
-        authenticateWithAuthClient: {
-          data: {};
-        };
         getCurrentUsersSyncedState: {
           data: {
             timers: ({ id: string } & typeof timerCounterMachine.context)[];
@@ -143,6 +135,11 @@ const timerListMachine = createMachine(
                   30000: {
                     actions: "pushLocalStateToBackend",
                     target: "ready",
+                  },
+                },
+                on: {
+                  TIMER_COUNTER_SYNCED: {
+                    target: "syncInitiated",
                   },
                 },
               },
@@ -297,8 +294,6 @@ const timerListMachine = createMachine(
             onError: reject,
           });
         });
-
-        return {};
       },
       getCurrentUsersSyncedState: async (context) => {
         const syncedState = await context.backendActor?.getUsersSyncedState();
@@ -329,7 +324,9 @@ const timerListMachine = createMachine(
         };
       },
       loadStateFromLocalDB: async () => {
-        let timersFromStorage = localStorage.getItem("timerCounterSavedState");
+        const timersFromStorage = localStorage.getItem(
+          "timerCounterSavedState",
+        );
 
         if (timersFromStorage) {
           return {

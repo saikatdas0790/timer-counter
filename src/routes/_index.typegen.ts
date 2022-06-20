@@ -67,7 +67,8 @@ export interface Typegen0 {
     loadAuthenticationState: "xstate.init";
     getCurrentUsersSyncedState:
       | "done.invoke.(machine).canisterSync.loadingAuthenticationState:invocation[0]"
-      | "done.invoke.(machine).canisterSync.loggingIn:invocation[0]";
+      | "done.invoke.(machine).canisterSync.loggingIn:invocation[0]"
+      | "TIMER_COUNTER_SYNCED";
     authenticateWithAuthClient: "LOGIN_INITIATED";
   };
   eventsCausingGuards: {
