@@ -16,7 +16,9 @@ try {
       )
       .toString(),
   );
-} catch (e) {}
+} catch (e) {
+  console.error(e);
+}
 
 let canisterDefinitions;
 try {
@@ -29,12 +31,16 @@ try {
     }),
     {},
   );
-} catch (error) {}
+} catch (e) {
+  console.error(e);
+}
 
 let dfxJson;
 try {
   dfxJson = JSON.parse(fs.readFileSync("./dfx.json").toString());
-} catch (e) {}
+} catch (e) {
+  console.error(e);
+}
 
 const DFX_PORT = dfxJson.networks.local.bind.split(":")[1];
 
