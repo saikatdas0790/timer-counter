@@ -17,6 +17,7 @@
       "$canisters/*": ["src/declarations/*"],
       "$components/*": ["src/components/*"],
       "$routes/*": ["src/routes/*"]
-    }
+    },
+    "types": ["vite-plugin-pwa/client"]
   }
 }

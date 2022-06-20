@@ -4,6 +4,17 @@
   window.global = window;
   window.Buffer = Buffer;
   import "../app.css";
+
+  import { registerSW } from "virtual:pwa-register";
+
+  registerSW({
+    onRegistered(swr) {
+      console.log(`SW registered: ${swr}`);
+    },
+    onRegisterError(error) {
+      console.log("SW registration error", error);
+    },
+  });
 </script>
 
 <svelte:head>
