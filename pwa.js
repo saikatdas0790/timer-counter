@@ -3,7 +3,7 @@ import { resolveConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { pwaConfiguration } from "./pwa-configuration.js";
 
-const webmanifestDestinations = ["./.svelte-kit/output/client/", "./build/"];
+const webmanifestDestinations = ["./.svelte-kit/output/client", "./build/_app"];
 
 const swDestinations = ["./build/"];
 
