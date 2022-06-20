@@ -15,7 +15,7 @@ import {
   createActor,
 } from "$canisters/backend_canister/index";
 import type { Principal } from "@dfinity/principal";
-import unionWith from "lodash/unionWith";
+import { unionWith } from "lodash";
 
 const timerListMachine = createMachine(
   {

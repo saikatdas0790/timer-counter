@@ -2,6 +2,8 @@ import adapter from "@sveltejs/adapter-static";
 import preprocess from "svelte-preprocess";
 import path from "path";
 import fs from "fs";
+import { VitePWA } from "vite-plugin-pwa";
+import { pwaConfiguration } from "./pwa-configuration.js";
 
 const isDev = process.env.NODE_ENV === "development";
 
@@ -54,6 +56,7 @@ const config = {
       $routes: path.resolve("./src/routes"),
     },
     vite: {
+      plugins: [VitePWA(pwaConfiguration)],
       define: {
         ...canisterDefinitions,
         "process.env.NODE_ENV": JSON.stringify(
