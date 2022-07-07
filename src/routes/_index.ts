@@ -18,7 +18,7 @@ const timerListMachine = createMachine(
       context: {} as {
         timers: ActorRefFrom<typeof timerCounterMachine>[];
         authClient?: AuthClient;
-        backendActor?: ActorSubclass<_SERVICE>;
+        backendActor: ActorSubclass<_SERVICE>;
         identity?: Identity;
         lastSyncedState?: ({
           id: string;
@@ -52,7 +52,7 @@ const timerListMachine = createMachine(
     context: {
       timers: [],
       authClient: undefined,
-      backendActor: undefined,
+      backendActor: backend_canister,
       identity: undefined,
       lastSyncedState: undefined,
     },
