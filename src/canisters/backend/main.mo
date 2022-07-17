@@ -22,8 +22,4 @@ actor {
     public shared({caller}) func upsertUsersSyncedState(stringifiedJSON: Text): async () {
       allUsersList.put(caller, stringifiedJSON);
     };
-
-    // public query func getUserData(userID: Principal): async ?Text {
-    //   return allUsersList.get(userID);
-    // };
 };
