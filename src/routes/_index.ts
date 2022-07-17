@@ -29,6 +29,7 @@ const timerListMachine = createMachine(
         | { type: "MACHINE_STATE_LOADED" }
         | { type: "NEW_TIMER_COUNTER_CREATED" }
         | { type: "TIMER_COUNTER_DELETE_RECEIVED"; timerId: string }
+        | { type: "TIMER_COUNTER_STATE_CHANGED" }
         | { type: "TIMER_COUNTER_SYNCED"; timerId: string },
       services: {} as {
         getCurrentUsersSyncedState: {
@@ -131,15 +132,19 @@ const timerListMachine = createMachine(
             initial: "syncInitiated",
             states: {
               ready: {
-                after: {
-                  30000: {
-                    actions: "pushLocalStateToBackend",
-                    target: "ready",
-                  },
-                },
+                // after: {
+                //   30000: {
+                //     actions: "pushLocalStateToBackend",
+                //     target: "ready",
+                //   },
+                // },
                 on: {
                   TIMER_COUNTER_SYNCED: {
                     target: "syncInitiated",
+                  },
+                  TIMER_COUNTER_STATE_CHANGED: {
+                    actions: "pushLocalStateToBackend",
+                    target: "ready",
                   },
                 },
               },

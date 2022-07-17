@@ -4,6 +4,11 @@ export interface Typegen0 {
   "@@xstate/typegen": true;
   eventsCausingActions: {
     decrementTimerCounter: "TIMER_COUNTER_DECREMENTED";
+    saveTimerStateToCanister:
+      | "TIMER_COUNTER_DECREMENTED"
+      | "TIMER_COUNTER_DELETED"
+      | "TIMER_COUNTER_INCREMENTED"
+      | "TIMER_COUNTER_LABEL_CHANGED";
     deleteTimerCounter: "TIMER_COUNTER_DELETED";
     incrementTimerCounter: "TIMER_COUNTER_INCREMENTED" | "";
     updateTimerCounterLabel: "TIMER_COUNTER_LABEL_CHANGED";

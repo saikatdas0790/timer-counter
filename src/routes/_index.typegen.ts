@@ -10,7 +10,7 @@ export interface Typegen0 {
     setAuthenticationStateToContext: "done.invoke.(machine).canisterSync.loadingAuthenticationState:invocation[0]";
     setLoggedInStateToContext: "done.invoke.(machine).canisterSync.loggingIn:invocation[0]";
     setLoggedOutStateToContext: "error.platform.(machine).canisterSync.loggingIn:invocation[0]";
-    pushLocalStateToBackend: "xstate.after(30000)#(machine).canisterSync.loggedIn.ready";
+    pushLocalStateToBackend: "TIMER_COUNTER_STATE_CHANGED";
     mergeSyncedStateWithLocalStateAndReinitializeTimers: "done.invoke.(machine).canisterSync.loggedIn.syncInitiated:invocation[0]";
   };
   internalEvents: {
@@ -36,17 +36,10 @@ export interface Typegen0 {
       type: "error.platform.(machine).canisterSync.loggingIn:invocation[0]";
       data: unknown;
     };
-    "xstate.after(30000)#(machine).canisterSync.loggedIn.ready": {
-      type: "xstate.after(30000)#(machine).canisterSync.loggedIn.ready";
-    };
     "done.invoke.(machine).canisterSync.loggedIn.syncInitiated:invocation[0]": {
       type: "done.invoke.(machine).canisterSync.loggedIn.syncInitiated:invocation[0]";
       data: unknown;
       __tip: "See the XState TS docs to learn how to strongly type this.";
-    };
-    "error.platform.(machine).canisterSync.loggedIn.syncInitiated:invocation[0]": {
-      type: "error.platform.(machine).canisterSync.loggedIn.syncInitiated:invocation[0]";
-      data: unknown;
     };
     "xstate.init": { type: "xstate.init" };
   };

@@ -51,16 +51,16 @@ const timerCounterMachine = createMachine(
     },
     on: {
       TIMER_COUNTER_DECREMENTED: {
-        actions: "decrementTimerCounter",
+        actions: ["decrementTimerCounter", "saveTimerStateToCanister"],
       },
       TIMER_COUNTER_DELETED: {
-        actions: "deleteTimerCounter",
+        actions: ["deleteTimerCounter", "saveTimerStateToCanister"],
       },
       TIMER_COUNTER_INCREMENTED: {
-        actions: "incrementTimerCounter",
+        actions: ["incrementTimerCounter", "saveTimerStateToCanister"],
       },
       TIMER_COUNTER_LABEL_CHANGED: {
-        actions: "updateTimerCounterLabel",
+        actions: ["updateTimerCounterLabel", "saveTimerStateToCanister"],
       },
     },
     initial: "new",
@@ -150,6 +150,9 @@ const timerCounterMachine = createMachine(
           return 0;
         },
       }),
+      saveTimerStateToCanister: sendParent((context, event) => ({
+        type: "TIMER_COUNTER_STATE_CHANGED",
+      })),
       setTimerCountdown: assign({
         remainingTimeInSeconds: (context, event) => {
           return event.intervalValue.valueInSeconds;
