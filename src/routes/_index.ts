@@ -72,18 +72,15 @@ const timerListMachine = createMachine(
             },
           },
           ready: {
-            after: {
-              5000: {
-                target: "ready",
-                actions: "saveTimersListStateToLocalStorage",
-              },
-            },
             on: {
               NEW_TIMER_COUNTER_CREATED: {
                 actions: "addNewTimerActorToTimerList",
               },
               TIMER_COUNTER_DELETE_RECEIVED: {
                 actions: "removeTimerActorFromTimerList",
+              },
+              TIMER_COUNTER_STATE_CHANGED: {
+                actions: "saveTimersListStateToLocalStorage",
               },
             },
           },
@@ -132,19 +129,12 @@ const timerListMachine = createMachine(
             initial: "syncInitiated",
             states: {
               ready: {
-                // after: {
-                //   30000: {
-                //     actions: "pushLocalStateToBackend",
-                //     target: "ready",
-                //   },
-                // },
                 on: {
                   TIMER_COUNTER_SYNCED: {
                     target: "syncInitiated",
                   },
                   TIMER_COUNTER_STATE_CHANGED: {
                     actions: "pushLocalStateToBackend",
-                    target: "ready",
                   },
                 },
               },
@@ -223,7 +213,6 @@ const timerListMachine = createMachine(
           }
         });
 
-        console.log(timers);
         await context.backendActor?.upsertUsersSyncedState(
           JSON.stringify(timers),
         );
@@ -302,8 +291,6 @@ const timerListMachine = createMachine(
       },
       getCurrentUsersSyncedState: async (context) => {
         const syncedState = await context.backendActor?.getUsersSyncedState();
-
-        console.log(syncedState);
 
         if (syncedState?.length) {
           const [stateToParse] = syncedState;

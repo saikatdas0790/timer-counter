@@ -6,7 +6,7 @@ export interface Typegen0 {
     setLoadedTimerDataToContext: "done.invoke.(machine).timerList.loadingStateFromLocalDB:invocation[0]";
     addNewTimerActorToTimerList: "NEW_TIMER_COUNTER_CREATED";
     removeTimerActorFromTimerList: "TIMER_COUNTER_DELETE_RECEIVED";
-    saveTimersListStateToLocalStorage: "xstate.after(5000)#(machine).timerList.ready";
+    saveTimersListStateToLocalStorage: "TIMER_COUNTER_STATE_CHANGED";
     setAuthenticationStateToContext: "done.invoke.(machine).canisterSync.loadingAuthenticationState:invocation[0]";
     setLoggedInStateToContext: "done.invoke.(machine).canisterSync.loggingIn:invocation[0]";
     setLoggedOutStateToContext: "error.platform.(machine).canisterSync.loggingIn:invocation[0]";
@@ -18,9 +18,6 @@ export interface Typegen0 {
       type: "done.invoke.(machine).timerList.loadingStateFromLocalDB:invocation[0]";
       data: unknown;
       __tip: "See the XState TS docs to learn how to strongly type this.";
-    };
-    "xstate.after(5000)#(machine).timerList.ready": {
-      type: "xstate.after(5000)#(machine).timerList.ready";
     };
     "done.invoke.(machine).canisterSync.loadingAuthenticationState:invocation[0]": {
       type: "done.invoke.(machine).canisterSync.loadingAuthenticationState:invocation[0]";
