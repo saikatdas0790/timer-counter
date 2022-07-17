@@ -8,6 +8,16 @@
   $: seconds = $timer.context.remainingTimeInSeconds % 60;
 </script>
 
+<svelte:head>
+  {#key seconds}
+    {#if $timer.matches("running")}
+      <title>{minutes}:{seconds}</title>
+    {:else}
+      <title>Timer Counter</title>
+    {/if}
+  {/key}
+</svelte:head>
+
 <div class="grid grid-flow-col justify-evenly">
   <div class="flex flex-col justify-center items-center">
     {#key minutes}

@@ -1,5 +1,4 @@
 service : {
-  getUserData: (principal) -> (opt text) query;
   getUsersSyncedState: () -> (opt text) query;
   upsertUsersSyncedState: (text) -> ();
 }

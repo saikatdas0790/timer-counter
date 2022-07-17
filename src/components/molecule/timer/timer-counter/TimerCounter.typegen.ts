@@ -9,14 +9,11 @@ export interface Typegen0 {
     updateTimerCounterLabel: "TIMER_COUNTER_LABEL_CHANGED";
     setTimerCountdown: "TIMER_INTERVAL_SET";
     resetTimerCountdown: "COUNTDOWN_TIMER_RESET";
-    decrementTimerCountdown: "xstate.after(1000)#(machine).running";
+    decrementTimerCountdown: "ONE_SECOND_ELAPSED";
     playEndSound: "";
   };
   internalEvents: {
     "": { type: "" };
-    "xstate.after(1000)#(machine).running": {
-      type: "xstate.after(1000)#(machine).running";
-    };
     "xstate.init": { type: "xstate.init" };
   };
   invokeSrcNameMap: {};

@@ -8,8 +8,20 @@
   import type { timerCounterMachine } from "$components/molecule/timer/timer-counter/TimerCounter";
   import TimerLabel from "$components/atom/input/TimerLabel.svelte";
   import RemoveTimer from "$components/atom/button/RemoveTimer.svelte";
+  import { onDestroy } from "svelte";
+  import TimerWorker from "./TimerWorker.ts?worker";
 
   export let timer: ActorRefFrom<typeof timerCounterMachine>;
+
+  const timerWorker = new TimerWorker();
+
+  timerWorker.addEventListener("message", (e) => {
+    if (e.data === "ONE_SECOND_ELAPSED") timer.send("ONE_SECOND_ELAPSED");
+  });
+
+  onDestroy(() => {
+    timerWorker.terminate();
+  });
 </script>
 
 <div

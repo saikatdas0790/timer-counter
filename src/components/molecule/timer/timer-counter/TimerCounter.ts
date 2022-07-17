@@ -41,7 +41,8 @@ const timerCounterMachine = createMachine(
         | { type: "TIMER_COUNTER_INCREMENTED" }
         | { type: "TIMER_COUNTER_DECREMENTED" }
         | { type: "TIMER_COUNTER_LABEL_CHANGED"; updatedLabel: string }
-        | { type: "TIMER_COUNTER_DELETED"; timerId: string },
+        | { type: "TIMER_COUNTER_DELETED"; timerId: string }
+        | { type: "ONE_SECOND_ELAPSED" },
     },
     context: {
       remainingTimeInSeconds: 0,
@@ -88,15 +89,13 @@ const timerCounterMachine = createMachine(
         },
       },
       running: {
-        after: {
-          1000: {
-            actions: "decrementTimerCountdown",
-            target: "running",
-          },
-        },
         on: {
           COUNTDOWN_TIMER_PLAY_PAUSED: {
             target: "paused",
+          },
+          ONE_SECOND_ELAPSED: {
+            actions: "decrementTimerCountdown",
+            target: "running",
           },
         },
         always: {
