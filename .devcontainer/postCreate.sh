@@ -36,6 +36,12 @@ gh config set git_protocol ssh --host github.com 2>/dev/null || true
 gh config set git_protocol ssh 2>/dev/null || true
 echo "✓ GitHub CLI configured to use SSH protocol"
 
+# Install npm dependencies
+echo ""
+echo "Installing npm dependencies..."
+npm install
+echo "✓ npm dependencies installed"
+
 # Check gh authentication status
 echo ""
 echo "Checking GitHub CLI authentication..."
