@@ -1,5 +1,5 @@
 import { timerCounterMachine } from "$components/molecule/timer/timer-counter/TimerCounter";
-import { assign, createMachine, spawn, type ActorRefFrom } from "xstate";
+import { assign, createMachine, fromPromise, type ActorRefFrom } from "xstate";
 import { AuthClient } from "@dfinity/auth-client";
 import type { ActorSubclass, Identity } from "@dfinity/agent";
 import type { _SERVICE } from "$canisters/backend_canister/backend_canister.did";
@@ -11,52 +11,28 @@ import {
 import type { Principal } from "@dfinity/principal";
 import { unionWith } from "lodash";
 
+type TimerSavedContext = {
+  id: string;
+  remainingTimeInSeconds: number;
+  timerLabel: string;
+  currentCount: number;
+};
+
 const timerListMachine = createMachine(
   {
-    tsTypes: {} as import("./_index.typegen").Typegen0,
-    schema: {
-      context: {} as {
-        timers: ActorRefFrom<typeof timerCounterMachine>[];
-        authClient?: AuthClient;
-        backendActor: ActorSubclass<_SERVICE>;
-        identity?: Identity;
-        lastSyncedState?: ({
-          id: string;
-        } & typeof timerCounterMachine.context)[];
-      },
-      events: {} as
-        | { type: "LOGIN_INITIATED" }
-        | { type: "MACHINE_STATE_LOADED" }
-        | { type: "NEW_TIMER_COUNTER_CREATED" }
-        | { type: "TIMER_COUNTER_DELETE_RECEIVED"; timerId: string }
-        | { type: "TIMER_COUNTER_STATE_CHANGED" }
-        | { type: "TIMER_COUNTER_SYNCED"; timerId: string },
-      services: {} as {
-        getCurrentUsersSyncedState: {
-          data: {
-            timers: ({ id: string } & typeof timerCounterMachine.context)[];
-          };
-        };
-        loadAuthenticationState: {
-          data: {
-            isLoggedIn: boolean;
-            authClient: AuthClient;
-          };
-        };
-        loadStateFromLocalDB: {
-          data: {
-            timers: ({ id: string } & typeof timerCounterMachine.context)[];
-          };
-        };
-      },
-    },
-    context: {
+    context: (): {
+      timers: ActorRefFrom<typeof timerCounterMachine>[];
+      authClient?: AuthClient;
+      backendActor: ActorSubclass<_SERVICE>;
+      identity?: Identity;
+      lastSyncedState?: TimerSavedContext[];
+    } => ({
       timers: [],
       authClient: undefined,
       backendActor: backend_canister,
       identity: undefined,
       lastSyncedState: undefined,
-    },
+    }),
     type: "parallel",
     states: {
       timerList: {
@@ -95,7 +71,7 @@ const timerListMachine = createMachine(
               onDone: [
                 {
                   actions: "setAuthenticationStateToContext",
-                  cond: "isLoggedIn",
+                  guard: "isLoggedIn",
                   target: "loggedIn",
                 },
                 {
@@ -115,6 +91,13 @@ const timerListMachine = createMachine(
           loggingIn: {
             invoke: {
               src: "authenticateWithAuthClient",
+              input: ({
+                context,
+              }: {
+                context: { authClient?: AuthClient };
+              }) => ({
+                authClient: context.authClient,
+              }),
               onDone: {
                 target: "loggedIn",
                 actions: "setLoggedInStateToContext",
@@ -141,6 +124,13 @@ const timerListMachine = createMachine(
               syncInitiated: {
                 invoke: {
                   src: "getCurrentUsersSyncedState",
+                  input: ({
+                    context,
+                  }: {
+                    context: { backendActor: ActorSubclass<_SERVICE> };
+                  }) => ({
+                    backendActor: context.backendActor,
+                  }),
                   onDone: {
                     actions:
                       "mergeSyncedStateWithLocalStateAndReinitializeTimers",
@@ -160,19 +150,18 @@ const timerListMachine = createMachine(
   {
     actions: {
       addNewTimerActorToTimerList: assign({
-        timers: (context, _event) => {
+        timers: ({ context, spawn }) => {
           return [
             ...context.timers,
             spawn(timerCounterMachine, {
-              name: `${Date.now()}`,
-              sync: true,
+              id: `${Date.now()}`,
             }),
           ];
         },
       }),
       mergeSyncedStateWithLocalStateAndReinitializeTimers: assign({
-        timers: (context, event) => {
-          const allLocalTimersContext = [];
+        timers: ({ context, event, spawn }) => {
+          const allLocalTimersContext: TimerSavedContext[] = [];
           for (const timerRef of context.timers) {
             const timerContext = timerRef.getSnapshot()?.context;
             if (timerContext) {
@@ -180,7 +169,9 @@ const timerListMachine = createMachine(
             }
           }
 
-          const allSyncedTimersContext = event.data.timers;
+          const output = (event as { output: { timers: TimerSavedContext[] } })
+            .output;
+          const allSyncedTimersContext = output.timers;
 
           const unionizedTimersContext = unionWith(
             allSyncedTimersContext,
@@ -191,18 +182,18 @@ const timerListMachine = createMachine(
           );
 
           return unionizedTimersContext.map((individualTimer) =>
-            spawn(
-              timerCounterMachine.withContext({
+            spawn(timerCounterMachine, {
+              id: `${individualTimer.id}`,
+              input: {
                 currentCount: individualTimer.currentCount,
                 remainingTimeInSeconds: 0,
                 timerLabel: individualTimer.timerLabel,
-              }),
-              `${individualTimer.id}`,
-            ),
+              },
+            }),
           );
         },
       }),
-      pushLocalStateToBackend: async (context, _event) => {
+      pushLocalStateToBackend: async ({ context }) => {
         const timers = context.timers.map((timerRef) => {
           const timerContext = timerRef.getSnapshot()?.context;
           if (timerContext) {
@@ -218,11 +209,15 @@ const timerListMachine = createMachine(
         );
       },
       removeTimerActorFromTimerList: assign({
-        timers: (context, event) => {
-          return context.timers.filter((timer) => timer.id !== event.timerId);
+        timers: ({ context, event }) => {
+          const e = event as {
+            type: "TIMER_COUNTER_DELETE_RECEIVED";
+            timerId: string;
+          };
+          return context.timers.filter((timer) => timer.id !== e.timerId);
         },
       }),
-      saveTimersListStateToLocalStorage: async (context, _event) => {
+      saveTimersListStateToLocalStorage: async ({ context }) => {
         const allTimersContext = [];
         for (const timerRef of context.timers) {
           const timerContext = timerRef.getSnapshot()?.context;
@@ -235,75 +230,91 @@ const timerListMachine = createMachine(
           JSON.stringify(allTimersContext),
         );
       },
-      setAuthenticationStateToContext: assign({
-        authClient: (context, event) => event.data.authClient,
-        backendActor: (context, event) =>
-          createActor(canisterId as string | Principal, {
+      setAuthenticationStateToContext: assign(({ event }) => {
+        const output = (
+          event as {
+            output: { isLoggedIn: boolean; authClient: AuthClient };
+          }
+        ).output;
+        return {
+          authClient: output.authClient,
+          backendActor: createActor(canisterId as string | Principal, {
             agentOptions: {
-              identity: event.data.authClient.getIdentity(),
+              identity: output.authClient.getIdentity(),
             },
           }),
-        identity: (context, event) => event.data.authClient.getIdentity(),
+          identity: output.authClient.getIdentity(),
+        };
       }),
       setLoadedTimerDataToContext: assign({
-        timers: (context, event) =>
-          event.data.timers.map((individualTimer) =>
-            spawn(
-              timerCounterMachine.withContext({
+        timers: ({ event, spawn }) => {
+          const output = (event as { output: { timers: TimerSavedContext[] } })
+            .output;
+          return output.timers.map((individualTimer) =>
+            spawn(timerCounterMachine, {
+              id: `${individualTimer.id}`,
+              input: {
                 currentCount: individualTimer.currentCount,
                 remainingTimeInSeconds: 0,
                 timerLabel: individualTimer.timerLabel,
-              }),
-              `${individualTimer.id}`,
-            ),
-          ),
+              },
+            }),
+          );
+        },
       }),
-      setLoggedInStateToContext: assign({
-        backendActor: (context, _event) =>
-          createActor(canisterId as string | Principal, {
-            agentOptions: {
-              identity: context.authClient?.getIdentity(),
-            },
-          }),
-        identity: (context, _event) => context.authClient?.getIdentity(),
-      }),
-      setLoggedOutStateToContext: assign({
-        backendActor: (_context, _event) => backend_canister,
-        identity: (context, _event) => context.authClient?.getIdentity(),
-      }),
+      setLoggedInStateToContext: assign(({ context }) => ({
+        backendActor: createActor(canisterId as string | Principal, {
+          agentOptions: {
+            identity: context.authClient?.getIdentity(),
+          },
+        }),
+        identity: context.authClient?.getIdentity(),
+      })),
+      setLoggedOutStateToContext: assign(() => ({
+        backendActor: backend_canister,
+      })),
     },
     guards: {
-      isLoggedIn: (context, event) => {
-        return event.data.isLoggedIn;
+      isLoggedIn: ({ event }) => {
+        const output = (event as { output: { isLoggedIn: boolean } }).output;
+        return output.isLoggedIn;
       },
     },
-    services: {
-      authenticateWithAuthClient: async (context, _event) => {
-        const authClient = context.authClient;
-        await new Promise((resolve, reject) => {
-          authClient?.login({
-            identityProvider: import.meta.env.VITE_INTERNET_IDENTITY_URL,
-            maxTimeToLive: BigInt(29 * 24 * 60 * 60 * 1000 * 1000 * 1000),
-            onSuccess: resolve as () => void,
-            onError: reject,
+    actors: {
+      authenticateWithAuthClient: fromPromise(
+        async ({ input }: { input: { authClient?: AuthClient } }) => {
+          const authClient = input.authClient;
+          await new Promise<void>((resolve, reject) => {
+            authClient?.login({
+              identityProvider: import.meta.env.VITE_INTERNET_IDENTITY_URL,
+              maxTimeToLive: BigInt(29 * 24 * 60 * 60 * 1000 * 1000 * 1000),
+              onSuccess: resolve,
+              onError: reject,
+            });
           });
-        });
-      },
-      getCurrentUsersSyncedState: async (context) => {
-        const syncedState = await context.backendActor?.getUsersSyncedState();
+        },
+      ),
+      getCurrentUsersSyncedState: fromPromise(
+        async ({
+          input,
+        }: {
+          input: { backendActor: ActorSubclass<_SERVICE> };
+        }) => {
+          const syncedState = await input.backendActor?.getUsersSyncedState();
 
-        if (syncedState?.length) {
-          const [stateToParse] = syncedState;
+          if (syncedState?.length) {
+            const [stateToParse] = syncedState;
+            return {
+              timers: JSON.parse(stateToParse) as TimerSavedContext[],
+            };
+          }
+
           return {
-            timers: JSON.parse(stateToParse),
+            timers: [] as TimerSavedContext[],
           };
-        }
-
-        return {
-          timers: [],
-        };
-      },
-      loadAuthenticationState: async () => {
+        },
+      ),
+      loadAuthenticationState: fromPromise(async () => {
         const internetIdentityClient = await AuthClient.create({
           idleOptions: {
             disableIdle: true,
@@ -314,23 +325,23 @@ const timerListMachine = createMachine(
           isLoggedIn: await internetIdentityClient.isAuthenticated(),
           authClient: internetIdentityClient,
         };
-      },
-      loadStateFromLocalDB: async () => {
+      }),
+      loadStateFromLocalDB: fromPromise(async () => {
         const timersFromStorage = localStorage.getItem(
           "timerCounterSavedState",
         );
 
         if (timersFromStorage) {
           return {
-            timers: JSON.parse(timersFromStorage),
+            timers: JSON.parse(timersFromStorage) as TimerSavedContext[],
           };
         } else {
           localStorage.setItem("timerCounterSavedState", JSON.stringify([]));
           return {
-            timers: [],
+            timers: [] as TimerSavedContext[],
           };
         }
-      },
+      }),
     },
   },
 );

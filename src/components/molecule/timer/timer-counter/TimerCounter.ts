@@ -1,4 +1,4 @@
-import { assign, createMachine, sendParent } from "xstate";
+import { assign, sendParent, setup } from "xstate";
 
 const timerIntervals = [
   {
@@ -25,149 +25,155 @@ export type Timer = {
   }[];
 };
 
-const timerCounterMachine = createMachine(
-  {
-    tsTypes: {} as import("./TimerCounter.typegen").Typegen0,
-    schema: {
-      context: {} as {
-        remainingTimeInSeconds: number;
-        timerLabel: string;
-        currentCount: number;
-      },
-      events: {} as
-        | { type: "TIMER_INTERVAL_SET"; intervalValue: TimerInterval }
-        | { type: "COUNTDOWN_TIMER_PLAY_PAUSED" }
-        | { type: "COUNTDOWN_TIMER_RESET" }
-        | { type: "TIMER_COUNTER_INCREMENTED" }
-        | { type: "TIMER_COUNTER_DECREMENTED" }
-        | { type: "TIMER_COUNTER_LABEL_CHANGED"; updatedLabel: string }
-        | { type: "TIMER_COUNTER_DELETED"; timerId: string }
-        | { type: "ONE_SECOND_ELAPSED" },
+const timerCounterMachine = setup({
+  types: {
+    context: {} as {
+      remainingTimeInSeconds: number;
+      timerLabel: string;
+      currentCount: number;
     },
-    context: {
-      remainingTimeInSeconds: 0,
-      timerLabel: "New Timer Counter",
-      currentCount: 0,
-    },
-    on: {
-      TIMER_COUNTER_DECREMENTED: {
-        actions: ["decrementTimerCounter", "saveTimerStateToCanister"],
-      },
-      TIMER_COUNTER_DELETED: {
-        actions: ["deleteTimerCounter", "saveTimerStateToCanister"],
-      },
-      TIMER_COUNTER_INCREMENTED: {
-        actions: ["incrementTimerCounter", "saveTimerStateToCanister"],
-      },
-      TIMER_COUNTER_LABEL_CHANGED: {
-        actions: ["updateTimerCounterLabel", "saveTimerStateToCanister"],
-      },
-    },
-    initial: "new",
-    states: {
-      new: {
-        on: {
-          TIMER_INTERVAL_SET: {
-            actions: "setTimerCountdown",
-            target: "timerSet",
-          },
-        },
-      },
-      timerSet: {
-        on: {
-          TIMER_INTERVAL_SET: {
-            actions: "setTimerCountdown",
-            target: "timerSet",
-          },
-          COUNTDOWN_TIMER_PLAY_PAUSED: {
-            target: "running",
-          },
-          COUNTDOWN_TIMER_RESET: {
-            target: "new",
-            actions: "resetTimerCountdown",
-          },
-        },
-      },
-      running: {
-        on: {
-          COUNTDOWN_TIMER_PLAY_PAUSED: {
-            target: "paused",
-          },
-          ONE_SECOND_ELAPSED: {
-            actions: "decrementTimerCountdown",
-            target: "running",
-          },
-        },
-        always: {
-          cond: "isTimerCountdownZero",
-          target: "finished",
-        },
-      },
-      paused: {
-        on: {
-          COUNTDOWN_TIMER_PLAY_PAUSED: {
-            target: "running",
-          },
-          COUNTDOWN_TIMER_RESET: {
-            target: "new",
-            actions: "resetTimerCountdown",
-          },
-        },
-      },
-      finished: {
-        on: {
-          COUNTDOWN_TIMER_RESET: {
-            target: "new",
-            actions: "resetTimerCountdown",
-          },
-        },
-        entry: ["incrementTimerCounter", "playEndSound"],
-      },
+    events: {} as
+      | { type: "TIMER_INTERVAL_SET"; intervalValue: TimerInterval }
+      | { type: "COUNTDOWN_TIMER_PLAY_PAUSED" }
+      | { type: "COUNTDOWN_TIMER_RESET" }
+      | { type: "TIMER_COUNTER_INCREMENTED" }
+      | { type: "TIMER_COUNTER_DECREMENTED" }
+      | { type: "TIMER_COUNTER_LABEL_CHANGED"; updatedLabel: string }
+      | { type: "TIMER_COUNTER_DELETED"; timerId: string }
+      | { type: "ONE_SECOND_ELAPSED" },
+    input: {} as {
+      remainingTimeInSeconds?: number;
+      timerLabel?: string;
+      currentCount?: number;
     },
   },
-  {
-    actions: {
-      decrementTimerCountdown: assign({
-        remainingTimeInSeconds: (context) => context.remainingTimeInSeconds - 1,
-      }),
-      decrementTimerCounter: assign({
-        currentCount: (context) =>
-          context.currentCount > 0 ? context.currentCount - 1 : 0,
-      }),
-      deleteTimerCounter: sendParent((context, event) => ({
-        type: "TIMER_COUNTER_DELETE_RECEIVED",
-        timerId: event.timerId,
-      })),
-      incrementTimerCounter: assign({
-        currentCount: (context) => context.currentCount + 1,
-      }),
-      playEndSound: () => {
-        const audio = new Audio("/timer-end.ogg");
-        audio.play();
-      },
-      resetTimerCountdown: assign({
-        remainingTimeInSeconds: (_context, _event) => {
-          return 0;
-        },
-      }),
-      saveTimerStateToCanister: sendParent((_context, _event) => ({
-        type: "TIMER_COUNTER_STATE_CHANGED",
-      })),
-      setTimerCountdown: assign({
-        remainingTimeInSeconds: (context, event) => {
-          return event.intervalValue.valueInSeconds;
-        },
-      }),
-      updateTimerCounterLabel: assign({
-        timerLabel: (context, event) => event.updatedLabel,
-      }),
+  actions: {
+    decrementTimerCountdown: assign({
+      remainingTimeInSeconds: ({ context }) =>
+        context.remainingTimeInSeconds - 1,
+    }),
+    decrementTimerCounter: assign({
+      currentCount: ({ context }) =>
+        context.currentCount > 0 ? context.currentCount - 1 : 0,
+    }),
+    deleteTimerCounter: sendParent(({ event }) => ({
+      type: "TIMER_COUNTER_DELETE_RECEIVED" as const,
+      timerId: (
+        event as Extract<typeof event, { type: "TIMER_COUNTER_DELETED" }>
+      ).timerId,
+    })),
+    incrementTimerCounter: assign({
+      currentCount: ({ context }) => context.currentCount + 1,
+    }),
+    playEndSound: () => {
+      const audio = new Audio("/timer-end.ogg");
+      audio.play();
     },
-    guards: {
-      isTimerCountdownZero: (context) => {
-        return context.remainingTimeInSeconds === 0;
-      },
+    resetTimerCountdown: assign({
+      remainingTimeInSeconds: () => 0,
+    }),
+    saveTimerStateToCanister: sendParent({
+      type: "TIMER_COUNTER_STATE_CHANGED",
+    }),
+    setTimerCountdown: assign({
+      remainingTimeInSeconds: ({ event }) =>
+        (event as Extract<typeof event, { type: "TIMER_INTERVAL_SET" }>)
+          .intervalValue.valueInSeconds,
+    }),
+    updateTimerCounterLabel: assign({
+      timerLabel: ({ event }) =>
+        (
+          event as Extract<
+            typeof event,
+            { type: "TIMER_COUNTER_LABEL_CHANGED" }
+          >
+        ).updatedLabel,
+    }),
+  },
+  guards: {
+    isTimerCountdownZero: ({ context }) => context.remainingTimeInSeconds === 0,
+  },
+}).createMachine({
+  context: ({ input }) => ({
+    remainingTimeInSeconds: input?.remainingTimeInSeconds ?? 0,
+    timerLabel: input?.timerLabel ?? "New Timer Counter",
+    currentCount: input?.currentCount ?? 0,
+  }),
+  on: {
+    TIMER_COUNTER_DECREMENTED: {
+      actions: ["decrementTimerCounter", "saveTimerStateToCanister"],
+    },
+    TIMER_COUNTER_DELETED: {
+      actions: ["deleteTimerCounter", "saveTimerStateToCanister"],
+    },
+    TIMER_COUNTER_INCREMENTED: {
+      actions: ["incrementTimerCounter", "saveTimerStateToCanister"],
+    },
+    TIMER_COUNTER_LABEL_CHANGED: {
+      actions: ["updateTimerCounterLabel", "saveTimerStateToCanister"],
     },
   },
-);
+  initial: "new",
+  states: {
+    new: {
+      on: {
+        TIMER_INTERVAL_SET: {
+          actions: "setTimerCountdown",
+          target: "timerSet",
+        },
+      },
+    },
+    timerSet: {
+      on: {
+        TIMER_INTERVAL_SET: {
+          actions: "setTimerCountdown",
+          target: "timerSet",
+        },
+        COUNTDOWN_TIMER_PLAY_PAUSED: {
+          target: "running",
+        },
+        COUNTDOWN_TIMER_RESET: {
+          target: "new",
+          actions: "resetTimerCountdown",
+        },
+      },
+    },
+    running: {
+      on: {
+        COUNTDOWN_TIMER_PLAY_PAUSED: {
+          target: "paused",
+        },
+        ONE_SECOND_ELAPSED: {
+          actions: "decrementTimerCountdown",
+          target: "running",
+        },
+      },
+      always: {
+        guard: "isTimerCountdownZero",
+        target: "finished",
+      },
+    },
+    paused: {
+      on: {
+        COUNTDOWN_TIMER_PLAY_PAUSED: {
+          target: "running",
+        },
+        COUNTDOWN_TIMER_RESET: {
+          target: "new",
+          actions: "resetTimerCountdown",
+        },
+      },
+    },
+    finished: {
+      on: {
+        COUNTDOWN_TIMER_RESET: {
+          target: "new",
+          actions: "resetTimerCountdown",
+        },
+      },
+      entry: ["incrementTimerCounter", "playEndSound"],
+    },
+  },
+});
 
 export { timerCounterMachine, timerIntervals, type TimerInterval };

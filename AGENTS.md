@@ -20,7 +20,7 @@ If `HANDOFF.md` does not exist, no handoff is required — proceed normally.
 
 **timer-counter** is a SvelteKit Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline and syncs across devices using [Internet Identity](https://identity.ic0.app/) and a Motoko backend canister on the [Internet Computer (ICP)](https://internetcomputer.org/).
 
-- **Frontend**: SvelteKit v2 (static adapter) + TypeScript 5 + Tailwind CSS v4 + XState v4
+- **Frontend**: SvelteKit v2 (static adapter) + TypeScript 5 + Tailwind CSS v4 + XState v5
 - **Backend**: Motoko canister on ICP, managed by `dfx`
 - **Auth**: `@dfinity/auth-client` with Internet Identity
 - **Testing**: Vitest
@@ -107,17 +107,25 @@ Do **not** re-declare these aliases in `tsconfig.json` — SvelteKit v2 auto-gen
 
 ---
 
-## State Management — XState v4
+## State Management — XState v5
 
-All non-trivial state lives in XState v4 machines. Conventions:
+All non-trivial state lives in XState v5 machines. Conventions:
 
 - Machine definitions are in `.ts` files alongside the component that owns them (e.g. `TimerCounter.ts` next to `TimerCounter.svelte`).
-- Typegen files (`*.typegen.ts`) are auto-generated — never edit them manually.
-- The `tsTypes` field must be declared as `{} as import("./Foo.typegen").TypegenN` at the top of every machine.
+- Use `setup({ types, actions, guards, actors }).createMachine({ ... })` for machines that need `input` (e.g. spawned child machines). Use `createMachine(config, options)` for machines that don't need `input`.
+- No typegen files — XState v5 infers types from the machine definition directly.
+- `assign` callbacks use destructured `({ context, event, spawn })` — **not** the v4 two-argument `(context, event)` form.
+- Guards are declared with `guard:` in transitions (not `cond:`). Guard implementations receive `({ context, event })`.
+- Services are now called **actors** and must be wrapped with `fromPromise(async ({ input }) => ...)` or `fromCallback`. The `actors:` key replaces the old `services:` key in machine options.
+- `invoke` blocks that need context data must explicitly pass `input: ({ context }) => ({ ... })` to the actor.
+- Resolved actor output is accessed as `event.output` in `onDone` handlers (was `event.data` in v4).
+- `sendParent` is still available; accepts a static event object or a callback `({ context, event }) => event`.
+- All `send()` calls use the **object form**: `send({ type: "EVENT" })` — the string shorthand `send("EVENT")` was removed in v5.
+- Child actors are spawned via `spawn(machine, { id: 'actorId', input: { ... } })` inside `assign` callbacks (`spawn` is available as a parameter of the `assign` callback). The `.withContext()` API was removed in v5.
+- `useMachine` from `@xstate/svelte` now returns `{ snapshot, send, actorRef }` (was `{ state, send, service }` in v4). The `snapshot` store replaces `state`.
+- `InterpreterFrom<T>` → use `Actor<T>` for the actor type; `StateFrom<T>` → `SnapshotFrom<T>`.
 - The root page machine (`src/routes/_index.ts`) is a **parallel** machine coordinating the timer list + auth + sync states.
-- Child actor machines are spawned from the root machine and communicated with via `sendParent`.
-- Machines are connected to Svelte components via `useMachine` from `@xstate/svelte`.
-- The root machine is passed to child components via Svelte's `setContext` / `getContext` using the key `"timerListMachine"`.
+- The root machine is passed to child components via Svelte's `setContext` / `getContext` using the key `"timerListMachine"` as `{ snapshot, send }`.
 
 ---
 
@@ -159,7 +167,7 @@ All non-trivial state lives in XState v4 machines. Conventions:
 
 ## Dependency Notes
 
-The project uses `legacy-peer-deps=true` (`.npmrc`) because several packages in the dependency tree have unresolved peer dep conflicts (notably `@xstate/svelte@2` requires `svelte@^3`, and older eslint/prettier plugins have similar constraints). This is intentional and safe — do not remove `.npmrc`.
+The project uses `legacy-peer-deps=true` (`.npmrc`) because several packages in the dependency tree have unresolved peer dep conflicts. This is intentional and safe — do not remove `.npmrc`.
 
 When adding new `@dfinity/*` packages, note that the entire `@dfinity` family (`agent`, `auth-client`, `candid`, `identity`, `principal`) must be kept at the same version since they are all strict peer deps of each other.
 

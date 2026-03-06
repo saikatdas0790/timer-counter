@@ -2,4 +2,5 @@
 - remove all of the internet identity and canister related stuff. We will add those back with SpacetimeDB
 - create a completely static client app and host as a SPA on Github Pages
 - Refactor this entire codebase to use React latest and Next.js latest instead of SvelteKit. I still want to use XState for state management, but we will need to change the way we connect it to React components (probably using `@xstate/react` instead of `@xstate/svelte`).
-- I want to use SpacetimeDB as the backend instead of a custom Motoko canister. This means we will need to refactor the data fetching and state management logic to work with SpacetimeDB's API instead of the current canister interface. Also use SpacetimeDB's authentication system instead of Internet Identity.
+- Use SpacetimeDB's authentication system instead of Internet Identity.
+- I want to use SpacetimeDB as the backend instead of a custom Motoko canister. This means we will need to refactor the data fetching and state management logic to work with SpacetimeDB's API instead of the current canister interface. 

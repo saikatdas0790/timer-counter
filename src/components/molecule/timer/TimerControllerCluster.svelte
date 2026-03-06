@@ -11,10 +11,12 @@
   {#if $timer.matches("paused") || $timer.matches("running") || $timer.matches("timerSet")}
     <TimerPlayPause
       {timer}
-      on:click={() => timer.send("COUNTDOWN_TIMER_PLAY_PAUSED")}
+      on:click={() => timer.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" })}
     />
   {/if}
   {#if $timer.matches("finished") || $timer.matches("paused") || $timer.matches("timerSet")}
-    <TimerReset on:click={() => timer.send("COUNTDOWN_TIMER_RESET")} />
+    <TimerReset
+      on:click={() => timer.send({ type: "COUNTDOWN_TIMER_RESET" })}
+    />
   {/if}
 </div>

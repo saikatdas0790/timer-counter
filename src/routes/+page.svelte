@@ -7,9 +7,9 @@
   import PeekingControls from "$components/organism/PeekingControls.svelte";
   import { setContext } from "svelte";
 
-  const { state, send } = useMachine(timerListMachine);
+  const { snapshot, send } = useMachine(timerListMachine);
 
-  setContext("timerListMachine", { state, send });
+  setContext("timerListMachine", { snapshot, send });
 </script>
 
 <svelte:head>
@@ -31,22 +31,22 @@
   />
 </svelte:head>
 
-{#if $state.matches("timerList.loadingStateFromLocalDB")}
+{#if $snapshot.matches("timerList.loadingStateFromLocalDB")}
   <TimerSkeletonGrid />
 {/if}
 
-{#if $state.matches("timerList.ready")}
+{#if $snapshot.matches("timerList.ready")}
   <PeekingControls />
-  {#if $state.context.timers.length === 0}
+  {#if $snapshot.context.timers.length === 0}
     <EmptyGrid
       on:click={() => {
-        send("NEW_TIMER_COUNTER_CREATED");
+        send({ type: "NEW_TIMER_COUNTER_CREATED" });
       }}
     />
   {:else}
     <TimersGrid
-      timers={$state.context.timers}
-      on:newTimerCreated={() => send("NEW_TIMER_COUNTER_CREATED")}
+      timers={$snapshot.context.timers}
+      on:newTimerCreated={() => send({ type: "NEW_TIMER_COUNTER_CREATED" })}
     />
   {/if}
 {/if}

@@ -16,7 +16,8 @@
   const timerWorker = new TimerWorker();
 
   timerWorker.addEventListener("message", (e) => {
-    if (e.data === "ONE_SECOND_ELAPSED") timer.send("ONE_SECOND_ELAPSED");
+    if (e.data === "ONE_SECOND_ELAPSED")
+      timer.send({ type: "ONE_SECOND_ELAPSED" });
   });
 
   onDestroy(() => {
@@ -40,8 +41,7 @@
     on:input={(e) => {
       timer.send({
         type: "TIMER_COUNTER_LABEL_CHANGED",
-        // @ts-expect-error xstate v4 typegen limitation
-        updatedLabel: e.target?.value ?? "",
+        updatedLabel: (e.target as HTMLInputElement)?.value ?? "",
       });
     }}
   />
