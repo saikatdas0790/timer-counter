@@ -10,6 +10,9 @@ const config = {
 
   kit: {
     adapter: adapter({ fallback: "404.html" }),
+    paths: {
+      base: process.env.BASE_PATH ?? "",
+    },
     alias: {
       $components: path.resolve("./src/components"),
       $routes: path.resolve("./src/routes"),

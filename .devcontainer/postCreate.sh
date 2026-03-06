@@ -52,6 +52,24 @@ else
     echo "  For local development: ensure gh is authenticated in WSL"
 fi
 
+# Generate .env from Ansible Vault if vault password is present
+echo ""
+echo "Checking Ansible Vault..."
+if [ -f "ansible/.vault_pass" ]; then
+    echo "✓ Vault password found, generating .env..."
+    (ansible-playbook ansible/setup_env.yml)
+    echo "✓ .env generated"
+elif [ -f "ansible/vars/vault.yml" ]; then
+    echo "⚠ vault.yml exists but no .vault_pass found"
+    echo "  Set your vault password: echo 'your_password' > ansible/.vault_pass && chmod 600 ansible/.vault_pass"
+    echo "  Then run: ansible-playbook ansible/setup_env.yml"
+else
+    echo "ℹ️  Ansible Vault not yet initialised"
+    echo "  Create ansible/vars/vault.yml from ansible/vars/vault.yml.example,"
+    echo "  write your password to ansible/.vault_pass, then encrypt:"
+    echo "  ansible-vault encrypt ansible/vars/vault.yml"
+fi
+
 echo ""
 echo "========================================="
 echo "✓ DevContainer setup complete!"

@@ -6,7 +6,8 @@
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/node:1": {}
+    "ghcr.io/devcontainers/features/node:1": {},
+    "ghcr.io/devcontainers-extra/features/ansible:2": {}
   },
   // Mount SSH agent socket from WSL host into container
   // Mount the parent repo's .git directory so postCreate.sh can copy the

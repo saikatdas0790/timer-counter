@@ -40,6 +40,8 @@ static/                       # Static assets served as-is
 .devcontainer/                # Dev container config (see Devcontainer section)
 .github/workflows/deploy.yml  # CI/CD — builds and deploys to GitHub Pages on push to main
 .npmrc                        # npm config (currently empty)
+ansible.cfg                   # Ansible config — at root so commands run from repo root
+ansible/                      # Ansible playbooks and secrets (see ansible/README.md)
 svelte.config.js              # SvelteKit config (adapter, aliases, preprocessor only)
 vite.config.js                # Vite config (plugins only)
 tsconfig.json                 # TypeScript config (extends .svelte-kit/tsconfig.json)
@@ -144,8 +146,32 @@ All non-trivial state lives in XState v5 machines. Conventions:
 - **Builds run inside the devcontainer** via `devcontainers/ci@v0.3`, so CI is byte-for-byte identical to the local dev environment. The devcontainer image is cached in GHCR under `ghcr.io/<owner>/timer-counter-devcontainer`.
 - The runner creates placeholder stubs for the two devcontainer bind-mount sources that don't exist in CI (`~/.ssh/agent.sock` and `~/.config/gh`) before launching the container.
 - Build output (`build/`) is uploaded as a GitHub Pages artifact and deployed via `actions/deploy-pages@v4`.
-- Custom domain: `timer-counter.saikat.dev` (configured via `static/CNAME`). DNS must have a CNAME record pointing `timer-counter.saikat.dev` → `saikatdas0790.github.io`.
+- Custom domain: `timer-counter.saikat.dev` (configured via `static/CNAME`). DNS is a proxied Cloudflare CNAME pointing to `saikatdas0790.github.io`.
 - SPA routing: `@sveltejs/adapter-static` is configured with `fallback: "404.html"`. GitHub Pages serves `404.html` for unmatched routes, which SvelteKit's client-side router picks up and routes correctly.
+
+---
+
+## DNS Management
+
+DNS is managed via Ansible + Cloudflare API. `ansible.cfg` lives at the repo root so all Ansible commands run from there.
+
+- Playbook: `ansible/manage_dns.yml` — upserts the CNAME `timer-counter.saikat.dev` → `saikatdas0790.github.io` (proxied)
+- Secrets: `ansible/vars/vault.yml` (Ansible Vault encrypted, committed). The Cloudflare API token is the only secret; zone/account IDs are plaintext in `ansible/vars/main.yml`.
+- Vault password: stored in `ansible/.vault_pass` locally (gitignored).
+- `postCreate.sh` auto-runs `ansible/setup_env.yml` on devcontainer start if `ansible/.vault_pass` is present, generating `.env` with the Cloudflare token.
+
+First-time setup (see `ansible/README.md` for full details):
+```bash
+cp ansible/vars/vault.yml.example ansible/vars/vault.yml
+# fill in your Cloudflare API token, then:
+echo 'your_password' > ansible/.vault_pass && chmod 600 ansible/.vault_pass
+ansible-vault encrypt ansible/vars/vault.yml
+```
+
+To apply DNS changes:
+```bash
+ansible-playbook ansible/manage_dns.yml
+```
 
 ---
 

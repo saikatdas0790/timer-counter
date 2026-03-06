@@ -1,0 +1,75 @@
+---
+- name: Manage DNS records for timer-counter.saikat.dev
+  hosts: local
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/main.yml
+    - vars/vault.yml
+
+  tasks:
+    - name: Check for existing CNAME record
+      uri:
+        url: "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records?type={{ dns_record_type }}&name={{ dns_record_name }}.saikat.dev"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+          Content-Type: "application/json"
+        status_code: 200
+      register: existing_records
+      no_log: true
+
+    - name: Set existing record ID if found
+      set_fact:
+        existing_record_id: "{{ existing_records.json.result[0].id }}"
+      when: existing_records.json.result | length > 0
+
+    - name: Create CNAME record (does not exist yet)
+      uri:
+        url: "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          type: "{{ dns_record_type }}"
+          name: "{{ dns_record_name }}"
+          content: "{{ dns_record_content }}"
+          proxied: "{{ dns_record_proxied }}"
+          ttl: 1
+        status_code: 200
+      when: existing_records.json.result | length == 0
+      no_log: true
+      register: create_result
+
+    - name: Update CNAME record (already exists)
+      uri:
+        url: "https://api.cloudflare.com/client/v4/zones/{{ cloudflare_zone_id }}/dns_records/{{ existing_record_id }}"
+        method: PUT
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          type: "{{ dns_record_type }}"
+          name: "{{ dns_record_name }}"
+          content: "{{ dns_record_content }}"
+          proxied: "{{ dns_record_proxied }}"
+          ttl: 1
+        status_code: 200
+      when: existing_records.json.result | length > 0
+      no_log: true
+      register: update_result
+
+    - name: Show result
+      debug:
+        msg: >-
+          {{
+            'Created' if (create_result is defined and create_result.json.success)
+            else 'Updated' if (update_result is defined and update_result.json.success)
+            else 'No change'
+          }}
+          CNAME {{ dns_record_name }}.saikat.dev → {{ dns_record_content }}
+          (proxied={{ dns_record_proxied }})
