@@ -20,7 +20,7 @@ If `HANDOFF.md` does not exist, no handoff is required — proceed normally.
 
 **timer-counter** is a SvelteKit Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline and syncs across devices using [Internet Identity](https://identity.ic0.app/) and a Motoko backend canister on the [Internet Computer (ICP)](https://internetcomputer.org/).
 
-- **Frontend**: SvelteKit v2 (static adapter) + TypeScript 5 + Tailwind CSS + XState v4
+- **Frontend**: SvelteKit v2 (static adapter) + TypeScript 5 + Tailwind CSS v4 + XState v4
 - **Backend**: Motoko canister on ICP, managed by `dfx`
 - **Auth**: `@dfinity/auth-client` with Internet Identity
 - **Testing**: Vitest
@@ -47,7 +47,6 @@ dfx.json                      # DFX canister + network config
 canister_ids.json             # Mainnet canister IDs (committed)
 svelte.config.js              # SvelteKit config (adapter, aliases, preprocessor only)
 vite.config.js                # Vite config (plugins, define, server proxy)
-tailwind.config.cjs           # Tailwind config
 tsconfig.json                 # TypeScript config (extends .svelte-kit/tsconfig.json)
 pwa.js                        # Post-build script to copy PWA manifest + service worker
 ```
@@ -72,9 +71,9 @@ Do not create route files with the old v1 naming (unprefixed `index.svelte` or `
 In SvelteKit v2, Vite configuration is separated from SvelteKit configuration:
 
 - **`svelte.config.js`**: Only SvelteKit-specific options — adapter, aliases, preprocessor. Never put `plugins`, `define`, or `server` here.
-- **`vite.config.js`**: All Vite options — plugins (including `sveltekit()` and `VitePWA`), `define` (canister IDs, NODE_ENV), `server.proxy`.
+- **`vite.config.js`**: All Vite options — plugins (including `tailwindcss()`, `sveltekit()`, and `VitePWA`), `define` (canister IDs, NODE_ENV), `server.proxy`.
 
-The `sveltekit()` plugin must be the first entry in `vite.config.js` plugins.
+Plugin order in `vite.config.js` is `[tailwindcss(), sveltekit(), VitePWA(...)]` — `tailwindcss()` must come first. There is no `postcss.config.cjs`; Tailwind v4 runs entirely through the Vite plugin.
 
 ---
 
@@ -166,6 +165,8 @@ When adding new `@dfinity/*` packages, note that the entire `@dfinity` family (`
 
 `@noble/curves` and `@noble/hashes` are pinned to `^1.x` — do not upgrade them to `^2.x` until `@dfinity/identity` drops its `^1.x` peer dep requirement.
 
+Tailwind CSS v4 uses the `@tailwindcss/vite` Vite plugin and has no `tailwind.config.cjs` or `postcss.config.cjs`. The only Tailwind entry point is `@import "tailwindcss"` in `src/app.css`. All customisation goes through CSS custom properties in `src/app.css` (Tailwind v4 CSS-based config). `autoprefixer` is no longer a dependency (built into v4).
+
 ESLint uses the flat config format (`eslint.config.js`) — the old `.eslintrc` format is not used. The `eslint-plugin-svelte3` package has been replaced by `eslint-plugin-svelte`. `no-undef` is disabled for TypeScript files (TypeScript handles undefined variable checks). `@typescript-eslint/no-unused-vars` is configured to allow `_`-prefixed names as intentionally unused. `prettier-plugin-svelte` is registered via `.prettierrc`.
 
 ---
@@ -206,4 +207,4 @@ Runs on container creation. Responsibilities:
 | Local dev   | `.dfx/local/canister_ids.json` (gitignored) | _(default/local)_ |
 | IC mainnet  | `canister_ids.json` (committed)             | `--network ic`    |
 
-`svelte.config.js` reads the appropriate file based on `NODE_ENV` and injects canister IDs as `process.env.<CANISTER_NAME>_CANISTER_ID` at build time.
+`vite.config.js` reads the appropriate file based on `NODE_ENV` and injects canister IDs as `process.env.<CANISTER_NAME>_CANISTER_ID` at build time via the `define` option.
