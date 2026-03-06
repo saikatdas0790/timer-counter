@@ -11,7 +11,6 @@ const config = {
   kit: {
     adapter: adapter({ fallback: "index.html" }),
     alias: {
-      $canisters: path.resolve("./src/declarations"),
       $components: path.resolve("./src/components"),
       $routes: path.resolve("./src/routes"),
     },

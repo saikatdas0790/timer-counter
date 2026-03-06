@@ -18,11 +18,10 @@ If `HANDOFF.md` does not exist, no handoff is required — proceed normally.
 
 ## Project Overview
 
-**timer-counter** is a SvelteKit Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline and syncs across devices using [Internet Identity](https://identity.ic0.app/) and a Motoko backend canister on the [Internet Computer (ICP)](https://internetcomputer.org/).
+**timer-counter** is a SvelteKit Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline with client-side localStorage persistence. Backend sync (SpacetimeDB) and auth will be added in a future iteration.
 
 - **Frontend**: SvelteKit v2 (static adapter) + TypeScript 5 + Tailwind CSS v4 + XState v5
-- **Backend**: Motoko canister on ICP, managed by `dfx`
-- **Auth**: `@dfinity/auth-client` with Internet Identity
+- **Persistence**: `localStorage` (client-only, no backend currently)
 - **Testing**: Vitest
 - **Formatting/Linting**: Prettier + ESLint
 
@@ -35,18 +34,14 @@ src/
   app.css                     # Global Tailwind base styles
   app.html                    # SvelteKit HTML shell
   hooks.ts                    # SvelteKit hooks (e.g. handle)
-  canisters/backend/main.mo   # Motoko backend canister source
-  declarations/               # Auto-generated canister bindings (dfx generate)
   components/                 # UI — follows atomic design (see below)
   routes/                     # SvelteKit file-based routes
 static/                       # Static assets served as-is
 .devcontainer/                # Dev container config (see Devcontainer section)
 .github/workflows/docker.yml  # CI/CD — builds and pushes Docker image on push to main
 .npmrc                        # legacy-peer-deps=true (required for mixed dep tree)
-dfx.json                      # DFX canister + network config
-canister_ids.json             # Mainnet canister IDs (committed)
 svelte.config.js              # SvelteKit config (adapter, aliases, preprocessor only)
-vite.config.js                # Vite config (plugins, define, server proxy)
+vite.config.js                # Vite config (plugins only)
 tsconfig.json                 # TypeScript config (extends .svelte-kit/tsconfig.json)
 pwa.js                        # Post-build script to copy PWA manifest + service worker
 ```
@@ -71,7 +66,7 @@ Do not create route files with the old v1 naming (unprefixed `index.svelte` or `
 In SvelteKit v2, Vite configuration is separated from SvelteKit configuration:
 
 - **`svelte.config.js`**: Only SvelteKit-specific options — adapter, aliases, preprocessor. Never put `plugins`, `define`, or `server` here.
-- **`vite.config.js`**: All Vite options — plugins (including `tailwindcss()`, `sveltekit()`, and `VitePWA`), `define` (canister IDs, NODE_ENV), `server.proxy`.
+- **`vite.config.js`**: All Vite options — plugins (including `tailwindcss()`, `sveltekit()`, and `VitePWA`).
 
 Plugin order in `vite.config.js` is `[tailwindcss(), sveltekit(), VitePWA(...)]` — `tailwindcss()` must come first. There is no `postcss.config.cjs`; Tailwind v4 runs entirely through the Vite plugin.
 
@@ -97,7 +92,6 @@ Three path aliases are configured in both `tsconfig.json` and `svelte.config.js`
 
 | Alias           | Resolves to          |
 | --------------- | -------------------- |
-| `$canisters/*`  | `src/declarations/*` |
 | `$components/*` | `src/components/*`   |
 | `$routes/*`     | `src/routes/*`       |
 
@@ -121,22 +115,13 @@ All non-trivial state lives in XState v5 machines. Conventions:
 - Resolved actor output is accessed as `event.output` in `onDone` handlers (was `event.data` in v4).
 - `sendParent` is still available; accepts a static event object or a callback `({ context, event }) => event`.
 - All `send()` calls use the **object form**: `send({ type: "EVENT" })` — the string shorthand `send("EVENT")` was removed in v5.
-- Child actors are spawned via `spawn(machine, { id: 'actorId', input: { ... } })` inside `assign` callbacks (`spawn` is available as a parameter of the `assign` callback). The `.withContext()` API was removed in v5.
+- Child actors are spawned by string src name `spawn('actorName', { id: 'actorId', input: { ... } })` inside `assign` callbacks. The actor must be registered in `setup({ actors: { actorName: logic } })`. Direct logic reference `spawn(logic, { id })` is not used because it does not support the `id` option in TypeScript. The `.withContext()` API was removed in v5.
 - `useMachine` from `@xstate/svelte` now returns `{ snapshot, send, actorRef }` (was `{ state, send, service }` in v4). The `snapshot` store replaces `state`.
 - `InterpreterFrom<T>` → use `Actor<T>` for the actor type; `StateFrom<T>` → `SnapshotFrom<T>`.
-- The root page machine (`src/routes/_index.ts`) is a **parallel** machine coordinating the timer list + auth + sync states.
+- The root page machine (`src/routes/_index.ts`) manages `timerList` state — loading from `localStorage`, adding/removing timers, and persisting changes back to `localStorage`.
 - The root machine is passed to child components via Svelte's `setContext` / `getContext` using the key `"timerListMachine"` as `{ snapshot, send }`.
 
 ---
-
-## Backend Canister (Motoko)
-
-- Source: `src/canisters/backend/main.mo`
-- Canister name in dfx: `backend_canister`
-- The canister stores a `HashMap<Principal, Text>` — each user's entire timer state is serialised to JSON and stored as a single `Text` value.
-- Generated TypeScript bindings live in `src/declarations/backend_canister/` — regenerate with `npm run dev:deploy` after changing the Motoko interface.
-- **Never edit files in `src/declarations/` by hand.**
-- Stable upgrade hooks (`preupgrade` / `postupgrade`) are implemented to preserve state across canister upgrades.
 
 ---
 
@@ -145,10 +130,7 @@ All non-trivial state lives in XState v5 machines. Conventions:
 | Script               | Purpose                                                     |
 | -------------------- | ----------------------------------------------------------- |
 | `npm run dev`        | Start SvelteKit dev server (via Vite)                       |
-| `npm run dfx:start`  | Start local DFX replica                                     |
-| `npm run dev:deploy` | Deploy backend canister locally + regenerate bindings       |
 | `npm run build`      | Production build (`vite build` + PWA manifest via `pwa.js`) |
-| `npm run ic:deploy`  | Deploy all canisters to IC mainnet                          |
 | `npm run test`       | Run Vitest tests                                            |
 | `npm run coverage`   | Vitest with coverage (c8)                                   |
 | `npm run check`      | `svelte-check` type check                                   |
@@ -176,10 +158,6 @@ All non-trivial state lives in XState v5 machines. Conventions:
 ## Dependency Notes
 
 The project uses `legacy-peer-deps=true` (`.npmrc`) because several packages in the dependency tree have unresolved peer dep conflicts. This is intentional and safe — do not remove `.npmrc`.
-
-When adding new `@dfinity/*` packages, note that the entire `@dfinity` family (`agent`, `auth-client`, `candid`, `identity`, `principal`) must be kept at the same version since they are all strict peer deps of each other.
-
-`@noble/curves` and `@noble/hashes` are pinned to `^1.x` — do not upgrade them to `^2.x` until `@dfinity/identity` drops its `^1.x` peer dep requirement.
 
 Tailwind CSS v4 uses the `@tailwindcss/vite` Vite plugin and has no `tailwind.config.cjs` or `postcss.config.cjs`. The only Tailwind entry point is `@import "tailwindcss"` in `src/app.css`. All customisation goes through CSS custom properties in `src/app.css` (Tailwind v4 CSS-based config). `autoprefixer` is no longer a dependency (built into v4).
 
@@ -216,11 +194,4 @@ Runs on container creation. Responsibilities:
 
 ---
 
-## Canister Environments
 
-| Environment | Canister IDs source                         | DFX network flag  |
-| ----------- | ------------------------------------------- | ----------------- |
-| Local dev   | `.dfx/local/canister_ids.json` (gitignored) | _(default/local)_ |
-| IC mainnet  | `canister_ids.json` (committed)             | `--network ic`    |
-
-`vite.config.js` reads the appropriate file based on `NODE_ENV` and injects canister IDs as `process.env.<CANISTER_NAME>_CANISTER_ID` at build time via the `define` option.

@@ -4,7 +4,6 @@
   import TimersGrid from "$components/organism/timer-grid/TimersGrid.svelte";
   import { timerListMachine } from "./_index";
   import TimerSkeletonGrid from "$components/organism/timer-grid/TimerSkeletonGrid.svelte";
-  import PeekingControls from "$components/organism/PeekingControls.svelte";
   import { setContext } from "svelte";
 
   const { snapshot, send } = useMachine(timerListMachine);
@@ -16,27 +15,15 @@
   <title>Timer Counter</title>
   <meta
     name="description"
-    content="List of labelled pomodoro timers with attached counters that works offline and syncs betweeen all your devices using Internet Identity and the Internet Computer by Dfinity"
-  />
-  <meta property="og:url" content={window.location.href} />
-  <meta property="og:type" content="website" />
-  <meta property="og:title" content="Timer Counter" />
-  <meta
-    property="og:description"
-    content="List of labelled pomodoro timers with attached counters that works offline and syncs betweeen all your devices using Internet Identity and the Internet Computer by Dfinity"
-  />
-  <meta
-    property="og:image"
-    content={`${window.location.origin}/assets/logos/logo-square-192.png`}
+    content="Labelled pomodoro timers with attached counters"
   />
 </svelte:head>
 
-{#if $snapshot.matches("timerList.loadingStateFromLocalDB")}
+{#if $snapshot.matches("loadingStateFromLocalDB")}
   <TimerSkeletonGrid />
 {/if}
 
-{#if $snapshot.matches("timerList.ready")}
-  <PeekingControls />
+{#if $snapshot.matches("ready")}
   {#if $snapshot.context.timers.length === 0}
     <EmptyGrid
       on:click={() => {

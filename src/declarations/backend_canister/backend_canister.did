@@ -1,4 +1,0 @@
-service : {
-  getUsersSyncedState: () -> (opt text) query;
-  upsertUsersSyncedState: (text) -> ();
-}

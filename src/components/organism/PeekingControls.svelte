@@ -1,6 +1,5 @@
 <script lang="ts">
   import ChevronLeft from "$components/atom/icon/heroicons/outline/ChevronLeft.svelte";
-  import SyncButton from "$components/molecule/sync/SyncButton.svelte";
 
   let isPeekOpen = false;
 </script>
@@ -16,5 +15,4 @@
   >
     <ChevronLeft className="text-white !h-12 !w-12" />
   </button>
-  <SyncButton />
 </div>
