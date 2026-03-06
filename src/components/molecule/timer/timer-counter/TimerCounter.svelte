@@ -8,10 +8,16 @@
   import type { timerCounterMachine } from "$components/molecule/timer/timer-counter/TimerCounter";
   import TimerLabel from "$components/atom/input/TimerLabel.svelte";
   import RemoveTimer from "$components/atom/button/RemoveTimer.svelte";
+  import { readable } from "svelte/store";
   import { onDestroy } from "svelte";
   import TimerWorker from "./TimerWorker.ts?worker";
 
   export let timer: ActorRefFrom<typeof timerCounterMachine>;
+
+  const snapshot = readable(timer.getSnapshot(), (set) => {
+    const sub = timer.subscribe((s) => set(s));
+    return sub.unsubscribe;
+  });
 
   const timerWorker = new TimerWorker();
 
@@ -29,7 +35,7 @@
   class="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 flex flex-col justify-between gap-8 duration-500 py-8"
 >
   <TimerDisplay {timer} />
-  {#if $timer.matches("new") || $timer.matches("timerSet")}
+  {#if $snapshot.matches("new") || $snapshot.matches("timerSet")}
     <TimerSelectButtonCluster {timer} />
   {/if}
   <TimerControllerCluster {timer} />
@@ -37,7 +43,7 @@
   <Counter {timer} />
   <Divider />
   <TimerLabel
-    textToDisplay={$timer.context.timerLabel}
+    textToDisplay={$snapshot.context.timerLabel}
     on:input={(e) => {
       timer.send({
         type: "TIMER_COUNTER_LABEL_CHANGED",

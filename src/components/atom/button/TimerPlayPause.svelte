@@ -5,7 +5,14 @@
   import Play from "../icon/material-symbols/PlayArrowOutlineRounded.svelte";
   import { scale } from "svelte/transition";
 
+  import { readable } from "svelte/store";
+
   export let timer: ActorRefFrom<typeof timerCounterMachine>;
+
+  const snapshot = readable(timer.getSnapshot(), (set) => {
+    const sub = timer.subscribe((s) => set(s));
+    return sub.unsubscribe;
+  });
 </script>
 
 <button
@@ -17,12 +24,12 @@
   <span class="sr-only">Toggle timer start and pause</span>
   <Play
     className={`h-24 w-24 text-green-300 ${
-      $timer.matches("running") ? "hidden" : "block"
+      $snapshot.matches("running") ? "hidden" : "block"
     }`}
   />
   <Pause
     className={`h-24 w-24 text-yellow-100 ${
-      $timer.matches("running") ? "block" : "hidden"
+      $snapshot.matches("running") ? "block" : "hidden"
     }`}
   />
 </button>

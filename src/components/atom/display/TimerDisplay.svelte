@@ -3,14 +3,22 @@
   import type { ActorRefFrom } from "xstate";
   import { fly } from "svelte/transition";
 
+  import { readable } from "svelte/store";
+
   export let timer: ActorRefFrom<typeof timerCounterMachine>;
-  $: minutes = Math.floor($timer.context.remainingTimeInSeconds / 60);
-  $: seconds = $timer.context.remainingTimeInSeconds % 60;
+
+  const snapshot = readable(timer.getSnapshot(), (set) => {
+    const sub = timer.subscribe((s) => set(s));
+    return sub.unsubscribe;
+  });
+
+  $: minutes = Math.floor($snapshot.context.remainingTimeInSeconds / 60);
+  $: seconds = $snapshot.context.remainingTimeInSeconds % 60;
 </script>
 
 <svelte:head>
   {#key seconds}
-    {#if $timer.matches("running")}
+    {#if $snapshot.matches("running")}
       <title>{minutes}:{seconds}</title>
     {:else}
       <title>Timer Counter</title>
