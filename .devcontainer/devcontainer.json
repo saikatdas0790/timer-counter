@@ -15,8 +15,7 @@
   // Safe to remove this mount after the first successful container build.
   "mounts": [
     "type=bind,source=${env:HOME}/.ssh/agent.sock,target=/ssh-agent,consistency=cached",
-    "type=bind,source=${env:HOME}/.config/gh,target=/home/vscode/.config/gh,consistency=cached",
-    "type=bind,source=${localWorkspaceFolder}/../../.git,target=/.git,consistency=cached"
+    "type=bind,source=${env:HOME}/.config/gh,target=/home/vscode/.config/gh,consistency=cached"
   ],
   // Set SSH_AUTH_SOCK environment variable to point to mounted socket.
   // GIT_WORK_TREE overrides core.worktree from the shared submodule git config,

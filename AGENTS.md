@@ -39,7 +39,7 @@ src/
 static/                       # Static assets served as-is
 .devcontainer/                # Dev container config (see Devcontainer section)
 .github/workflows/docker.yml  # CI/CD — builds and pushes Docker image on push to main
-.npmrc                        # legacy-peer-deps=true (required for mixed dep tree)
+.npmrc                        # npm config (currently empty)
 svelte.config.js              # SvelteKit config (adapter, aliases, preprocessor only)
 vite.config.js                # Vite config (plugins only)
 tsconfig.json                 # TypeScript config (extends .svelte-kit/tsconfig.json)
@@ -157,7 +157,7 @@ All non-trivial state lives in XState v5 machines. Conventions:
 
 ## Dependency Notes
 
-The project uses `legacy-peer-deps=true` (`.npmrc`) because several packages in the dependency tree have unresolved peer dep conflicts. This is intentional and safe — do not remove `.npmrc`.
+All packages in the dependency tree are compatible with the current npm version — no `legacy-peer-deps` workaround is needed.
 
 Tailwind CSS v4 uses the `@tailwindcss/vite` Vite plugin and has no `tailwind.config.cjs` or `postcss.config.cjs`. The only Tailwind entry point is `@import "tailwindcss"` in `src/app.css`. All customisation goes through CSS custom properties in `src/app.css` (Tailwind v4 CSS-based config). `autoprefixer` is no longer a dependency (built into v4).
 
