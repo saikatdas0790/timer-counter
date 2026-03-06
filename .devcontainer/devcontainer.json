@@ -1,0 +1,38 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/ubuntu
+{
+	"name": "Ubuntu",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+	"features": {
+		"ghcr.io/devcontainers/features/github-cli:1": {},
+	},
+	// Mount SSH agent socket from WSL host into container
+	// Mount the parent repo's .git directory so postCreate.sh can copy the
+	// submodule's git data (/.git/modules/apps/timer-counter) into the worktree
+	// as a standalone .git directory, fixing the broken worktree path.
+	// Safe to remove this mount after the first successful container build.
+	"mounts": [
+		"type=bind,source=${env:HOME}/.ssh/agent.sock,target=/ssh-agent,consistency=cached",
+		"type=bind,source=${env:HOME}/.config/gh,target=/home/vscode/.config/gh,consistency=cached",
+		"type=bind,source=${localWorkspaceFolder}/../../.git,target=/.git,consistency=cached"
+	],
+	// Set SSH_AUTH_SOCK environment variable to point to mounted socket.
+	// GIT_WORK_TREE overrides core.worktree from the shared submodule git config,
+	// which stores a host-relative path that doesn't exist inside the container.
+	// This lets the .git gitfile redirect work against the bind-mounted git dir
+	// without modifying any shared config, keeping the parent repo unaffected.
+	// Commits made in the container are immediately visible in the parent repo.
+	"remoteEnv": {
+		"SSH_AUTH_SOCK": "/ssh-agent",
+		"GIT_WORK_TREE": "/workspaces/timer-counter"
+	},
+	// Run post-create setup script
+	"postCreateCommand": ".devcontainer/postCreate.sh"
+	// Use 'forwardPorts' to make a list of ports inside the container available locally.
+	// "forwardPorts": [],
+	// Configure tool-specific properties.
+	// "customizations": {},
+	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+	// "remoteUser": "root"
+}
