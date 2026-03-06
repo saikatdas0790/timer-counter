@@ -1,18 +1,8 @@
-# Stage 1: build the SvelteKit adapter-static output
-FROM node:22-alpine AS builder
-
-WORKDIR /app
-
-COPY package*.json ./
-RUN npm ci
-
-COPY . .
-RUN npm run build
-
-# Stage 2: serve the static build with nginx
+# The build/ directory is produced by the devcontainer CI step before this
+# image is built. No node build stage needed here.
 FROM nginx:alpine
 
-COPY --from=builder /app/build /usr/share/nginx/html
+COPY build /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80

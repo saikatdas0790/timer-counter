@@ -159,9 +159,17 @@ All non-trivial state lives in XState v5 machines. Conventions:
 
 - Workflow: `.github/workflows/docker.yml`
 - Triggers on push to `main`.
-- Builds a Docker image using the `Dockerfile` and pushes to GitHub Container Registry (`ghcr.io`).
+- **Builds run inside the devcontainer** via `devcontainers/ci@v0.3`, so CI is byte-for-byte identical to the local dev environment. The devcontainer image is cached in GHCR under `ghcr.io/<owner>/timer-counter-devcontainer`.
+- The runner creates placeholder stubs for the three devcontainer bind-mount sources that don't exist in CI (`~/.ssh/agent.sock`, `~/.config/gh`, and `$GITHUB_WORKSPACE/../../.git`) before launching the container.
+- Build output (`build/`) is written into the runner workspace by the devcontainer step, then copied into an `nginx:alpine` Docker image and pushed to `ghcr.io/<owner>/timer-counter`.
+- The `Dockerfile` contains **no build stage** — it just `COPY build /usr/share/nginx/html`. All compilation happens in the devcontainer step.
 - Image is tagged with a timestamp+SHA tag and `latest`.
-- The `Dockerfile` runs `npm ci` then `npm run build` and serves the static output via nginx.
+
+---
+
+## Tooling Preferences
+
+- **Use `gh` CLI** for all GitHub interactions (viewing CI runs, opening PRs, fetching issue details, etc.) instead of fetching web URLs. The `gh` CLI is pre-installed and authenticated in the devcontainer. Example: `gh run view --log-failed` to inspect a failing CI run.
 
 ---
 
