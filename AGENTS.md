@@ -38,7 +38,7 @@ src/
   routes/                     # SvelteKit file-based routes
 static/                       # Static assets served as-is
 .devcontainer/                # Dev container config (see Devcontainer section)
-.github/workflows/docker.yml  # CI/CD — builds and pushes Docker image on push to main
+.github/workflows/deploy.yml  # CI/CD — builds and deploys to GitHub Pages on push to main
 .npmrc                        # npm config (currently empty)
 svelte.config.js              # SvelteKit config (adapter, aliases, preprocessor only)
 vite.config.js                # Vite config (plugins only)
@@ -139,13 +139,13 @@ All non-trivial state lives in XState v5 machines. Conventions:
 
 ## CI/CD
 
-- Workflow: `.github/workflows/docker.yml`
+- Workflow: `.github/workflows/deploy.yml`
 - Triggers on push to `main`.
 - **Builds run inside the devcontainer** via `devcontainers/ci@v0.3`, so CI is byte-for-byte identical to the local dev environment. The devcontainer image is cached in GHCR under `ghcr.io/<owner>/timer-counter-devcontainer`.
-- The runner creates placeholder stubs for the three devcontainer bind-mount sources that don't exist in CI (`~/.ssh/agent.sock`, `~/.config/gh`, and `$GITHUB_WORKSPACE/../../.git`) before launching the container.
-- Build output (`build/`) is written into the runner workspace by the devcontainer step, then copied into an `nginx:alpine` Docker image and pushed to `ghcr.io/<owner>/timer-counter`.
-- The `Dockerfile` contains **no build stage** — it just `COPY build /usr/share/nginx/html`. All compilation happens in the devcontainer step.
-- Image is tagged with a timestamp+SHA tag and `latest`.
+- The runner creates placeholder stubs for the two devcontainer bind-mount sources that don't exist in CI (`~/.ssh/agent.sock` and `~/.config/gh`) before launching the container.
+- Build output (`build/`) is uploaded as a GitHub Pages artifact and deployed via `actions/deploy-pages@v4`.
+- Custom domain: `timer-counter.saikat.dev` (configured via `static/CNAME`). DNS must have a CNAME record pointing `timer-counter.saikat.dev` → `saikatdas0790.github.io`.
+- SPA routing: `@sveltejs/adapter-static` is configured with `fallback: "404.html"`. GitHub Pages serves `404.html` for unmatched routes, which SvelteKit's client-side router picks up and routes correctly.
 
 ---
 

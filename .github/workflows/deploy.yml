@@ -1,0 +1,67 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  packages: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # devcontainer.json bind-mounts ~/.ssh/agent.sock from the host so
+      # developers can forward their SSH agent into the container. In CI
+      # there is no SSH agent socket, so create a placeholder file to
+      # prevent Docker from failing on the missing bind-mount source.
+      - name: Create SSH agent socket placeholder
+        run: mkdir -p ~/.ssh && touch ~/.ssh/agent.sock
+
+      # devcontainer.json bind-mounts ~/.config/gh so the gh CLI config is
+      # available inside the container. GitHub-hosted runners don't have this
+      # directory by default, so create it as an empty placeholder.
+      - name: Create gh config placeholder
+        run: mkdir -p ~/.config/gh
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build inside dev container
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/${{ github.repository_owner }}/timer-counter-devcontainer
+          cacheFrom: ghcr.io/${{ github.repository_owner }}/timer-counter-devcontainer
+          runCmd: .devcontainer/postCreate.sh && npm ci && npm run build
+          push: filter
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
