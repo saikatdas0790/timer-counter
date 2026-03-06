@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "scripts": {
     "dfx:start": "dfx start",
-    "dev": "vite dev",
+    "dev": "vite dev --host",
     "dev:deploy": "dfx deploy --no-wallet backend_canister && dfx generate backend_canister",
     "build": "vite build && node ./pwa.js",
     "ic:deploy": "dfx deploy --network=ic --no-wallet",

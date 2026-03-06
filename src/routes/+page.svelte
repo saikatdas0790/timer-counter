@@ -13,10 +13,7 @@
 
 <svelte:head>
   <title>Timer Counter</title>
-  <meta
-    name="description"
-    content="Labelled pomodoro timers with attached counters"
-  />
+  <meta name="description" content="Labelled pomodoro timers with attached counters" />
 </svelte:head>
 
 {#if $snapshot.matches("loadingStateFromLocalDB")}
