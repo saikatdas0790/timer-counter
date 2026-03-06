@@ -120,16 +120,6 @@ All non-trivial state lives in XState v4 machines. Conventions:
 
 ---
 
-## CI/CD
-
-- Workflow: `.github/workflows/deploy.yml`
-- Triggers on every push to any branch (currently not gated to `main` — the `if: github.ref` guard is commented out).
-- Uses DFX version `0.10.1` (pinned).
-- Deploys to IC mainnet using an identity PEM stored in the `ACTIONS_IDENTITY_SECRET` repository secret.
-- The unit test job is currently commented out.
-
----
-
 ## Devcontainer
 
 This repository is a **git submodule** inside a parent Kubernetes monorepo (`apps/timer-counter`). The devcontainer is designed to work correctly when opened as a standalone VS Code instance without the parent repo being checked out.
