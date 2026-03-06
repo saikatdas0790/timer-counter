@@ -23,7 +23,8 @@
     {#key minutes}
       <span
         class="text-purple-300 text-9xl font-bold"
-        in:fly={{ y: 20, duration: 100 }}>
+        in:fly={{ y: 20, duration: 100 }}
+      >
         {minutes}
       </span>
     {/key}
@@ -33,7 +34,8 @@
     {#key seconds}
       <span
         class="text-purple-300 text-9xl font-bold"
-        in:fly={{ y: 20, duration: 100 }}>
+        in:fly={{ y: 20, duration: 100 }}
+      >
         {seconds}
       </span>
     {/key}

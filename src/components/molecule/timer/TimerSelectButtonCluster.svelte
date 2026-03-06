@@ -18,6 +18,7 @@
         timer.send({
           type: "TIMER_INTERVAL_SET",
           intervalValue: individualInterval,
-        })} />
+        })}
+    />
   {/each}
 </div>

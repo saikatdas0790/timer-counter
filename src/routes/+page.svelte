@@ -16,16 +16,19 @@
   <title>Timer Counter</title>
   <meta
     name="description"
-    content="List of labelled pomodoro timers with attached counters that works offline and syncs betweeen all your devices using Internet Identity and the Internet Computer by Dfinity" />
+    content="List of labelled pomodoro timers with attached counters that works offline and syncs betweeen all your devices using Internet Identity and the Internet Computer by Dfinity"
+  />
   <meta property="og:url" content={window.location.href} />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Timer Counter" />
   <meta
     property="og:description"
-    content="List of labelled pomodoro timers with attached counters that works offline and syncs betweeen all your devices using Internet Identity and the Internet Computer by Dfinity" />
+    content="List of labelled pomodoro timers with attached counters that works offline and syncs betweeen all your devices using Internet Identity and the Internet Computer by Dfinity"
+  />
   <meta
     property="og:image"
-    content={`${window.location.origin}/assets/logos/logo-square-192.png`} />
+    content={`${window.location.origin}/assets/logos/logo-square-192.png`}
+  />
 </svelte:head>
 
 {#if $state.matches("timerList.loadingStateFromLocalDB")}
@@ -38,10 +41,12 @@
     <EmptyGrid
       on:click={() => {
         send("NEW_TIMER_COUNTER_CREATED");
-      }} />
+      }}
+    />
   {:else}
     <TimersGrid
       timers={$state.context.timers}
-      on:newTimerCreated={() => send("NEW_TIMER_COUNTER_CREATED")} />
+      on:newTimerCreated={() => send("NEW_TIMER_COUNTER_CREATED")}
+    />
   {/if}
 {/if}

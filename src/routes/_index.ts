@@ -160,7 +160,7 @@ const timerListMachine = createMachine(
   {
     actions: {
       addNewTimerActorToTimerList: assign({
-        timers: (context, event) => {
+        timers: (context, _event) => {
           return [
             ...context.timers,
             spawn(timerCounterMachine, {
@@ -202,7 +202,7 @@ const timerListMachine = createMachine(
           );
         },
       }),
-      pushLocalStateToBackend: async (context, event) => {
+      pushLocalStateToBackend: async (context, _event) => {
         const timers = context.timers.map((timerRef) => {
           const timerContext = timerRef.getSnapshot()?.context;
           if (timerContext) {
@@ -222,7 +222,7 @@ const timerListMachine = createMachine(
           return context.timers.filter((timer) => timer.id !== event.timerId);
         },
       }),
-      saveTimersListStateToLocalStorage: async (context, event) => {
+      saveTimersListStateToLocalStorage: async (context, _event) => {
         const allTimersContext = [];
         for (const timerRef of context.timers) {
           const timerContext = timerRef.getSnapshot()?.context;
@@ -259,17 +259,17 @@ const timerListMachine = createMachine(
           ),
       }),
       setLoggedInStateToContext: assign({
-        backendActor: (context, event) =>
+        backendActor: (context, _event) =>
           createActor(canisterId as string | Principal, {
             agentOptions: {
               identity: context.authClient?.getIdentity(),
             },
           }),
-        identity: (context, event) => context.authClient?.getIdentity(),
+        identity: (context, _event) => context.authClient?.getIdentity(),
       }),
       setLoggedOutStateToContext: assign({
-        backendActor: (context, event) => backend_canister,
-        identity: (context, event) => context.authClient?.getIdentity(),
+        backendActor: (_context, _event) => backend_canister,
+        identity: (context, _event) => context.authClient?.getIdentity(),
       }),
     },
     guards: {
@@ -278,7 +278,7 @@ const timerListMachine = createMachine(
       },
     },
     services: {
-      authenticateWithAuthClient: async (context, event) => {
+      authenticateWithAuthClient: async (context, _event) => {
         const authClient = context.authClient;
         await new Promise((resolve, reject) => {
           authClient?.login({

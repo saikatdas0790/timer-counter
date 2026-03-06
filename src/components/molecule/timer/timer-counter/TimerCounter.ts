@@ -15,7 +15,7 @@ const timerIntervals = [
   },
 ] as const;
 
-type TimerInterval = typeof timerIntervals[number];
+type TimerInterval = (typeof timerIntervals)[number];
 
 export type Timer = {
   currentInterval: TimerInterval;
@@ -146,11 +146,11 @@ const timerCounterMachine = createMachine(
         audio.play();
       },
       resetTimerCountdown: assign({
-        remainingTimeInSeconds: (context, event) => {
+        remainingTimeInSeconds: (_context, _event) => {
           return 0;
         },
       }),
-      saveTimerStateToCanister: sendParent((context, event) => ({
+      saveTimerStateToCanister: sendParent((_context, _event) => ({
         type: "TIMER_COUNTER_STATE_CHANGED",
       })),
       setTimerCountdown: assign({

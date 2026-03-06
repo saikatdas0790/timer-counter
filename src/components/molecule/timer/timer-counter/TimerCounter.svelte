@@ -25,7 +25,8 @@
 </script>
 
 <div
-  class="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 flex flex-col justify-between gap-8 duration-500 py-8">
+  class="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 flex flex-col justify-between gap-8 duration-500 py-8"
+>
   <TimerDisplay {timer} />
   {#if $timer.matches("new") || $timer.matches("timerSet")}
     <TimerSelectButtonCluster {timer} />
@@ -39,12 +40,14 @@
     on:input={(e) => {
       timer.send({
         type: "TIMER_COUNTER_LABEL_CHANGED",
-        // @ts-ignore
+        // @ts-expect-error xstate v4 typegen limitation
         updatedLabel: e.target?.value ?? "",
       });
-    }} />
+    }}
+  />
   <RemoveTimer
     on:click={() => {
       timer.send({ type: "TIMER_COUNTER_DELETED", timerId: timer.id });
-    }} />
+    }}
+  />
 </div>

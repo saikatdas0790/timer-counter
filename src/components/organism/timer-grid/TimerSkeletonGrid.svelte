@@ -4,6 +4,12 @@
   export let timerSkeletonCount = 9;
 </script>
 
+<div class="py-8">
+  {#each Array(timerSkeletonCount).fill(null) as _item, i (i)}
+    <TimerSkeleton />
+  {/each}
+</div>
+
 <style>
   div {
     display: grid;
@@ -12,13 +18,3 @@
     justify-items: center;
   }
 </style>
-
-<div class="py-8">
-  {#each Array(timerSkeletonCount)
-    .fill(null)
-    .map((element, index) => {
-      return index + 1;
-    }) as skeletonIndex}
-    <TimerSkeleton />
-  {/each}
-</div>

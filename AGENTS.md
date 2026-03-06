@@ -7,6 +7,7 @@ This is the source of truth for any agent operating in this repository. It refle
 ## Resuming from a Handoff
 
 If a file named `HANDOFF.md` exists in the repo root:
+
 1. Read it fully and absorb the context and exact next steps described in it.
 2. Continue the work from where it left off.
 3. Delete `HANDOFF.md` once its instructions have been incorporated.
@@ -81,11 +82,11 @@ The `sveltekit()` plugin must be the first entry in `vite.config.js` plugins.
 
 Components live under `src/components/` and follow a strict three-tier atomic hierarchy:
 
-| Tier | Path | Description |
-|---|---|---|
-| `atom` | `src/components/atom/` | Primitive, stateless UI pieces (buttons, icons, inputs, displays, dividers) |
-| `molecule` | `src/components/molecule/` | Composed atoms with local behaviour (timer/counter, sync button, counter) |
-| `organism` | `src/components/organism/` | Full page sections composed of molecules (grid, controls) |
+| Tier       | Path                       | Description                                                                 |
+| ---------- | -------------------------- | --------------------------------------------------------------------------- |
+| `atom`     | `src/components/atom/`     | Primitive, stateless UI pieces (buttons, icons, inputs, displays, dividers) |
+| `molecule` | `src/components/molecule/` | Composed atoms with local behaviour (timer/counter, sync button, counter)   |
+| `organism` | `src/components/organism/` | Full page sections composed of molecules (grid, controls)                   |
 
 Always place new components at the lowest tier that makes sense. Do not import atoms from organism-level or import organisms from molecule-level.
 
@@ -95,11 +96,11 @@ Always place new components at the lowest tier that makes sense. Do not import a
 
 Three path aliases are configured in both `tsconfig.json` and `svelte.config.js`:
 
-| Alias | Resolves to |
-|---|---|
-| `$canisters/*` | `src/declarations/*` |
-| `$components/*` | `src/components/*` |
-| `$routes/*` | `src/routes/*` |
+| Alias           | Resolves to          |
+| --------------- | -------------------- |
+| `$canisters/*`  | `src/declarations/*` |
+| `$components/*` | `src/components/*`   |
+| `$routes/*`     | `src/routes/*`       |
 
 Always use these aliases for cross-directory imports instead of relative `../` paths.
 
@@ -134,18 +135,18 @@ All non-trivial state lives in XState v4 machines. Conventions:
 
 ## Scripts Reference
 
-| Script | Purpose |
-|---|---|
-| `npm run dev` | Start SvelteKit dev server (via Vite) |
-| `npm run dfx:start` | Start local DFX replica |
-| `npm run dev:deploy` | Deploy backend canister locally + regenerate bindings |
-| `npm run build` | Production build (`vite build` + PWA manifest via `pwa.js`) |
-| `npm run ic:deploy` | Deploy all canisters to IC mainnet |
-| `npm run test` | Run Vitest tests |
-| `npm run coverage` | Vitest with coverage (c8) |
-| `npm run check` | `svelte-check` type check |
-| `npm run lint` | Prettier + ESLint check |
-| `npm run format` | Prettier auto-format |
+| Script               | Purpose                                                     |
+| -------------------- | ----------------------------------------------------------- |
+| `npm run dev`        | Start SvelteKit dev server (via Vite)                       |
+| `npm run dfx:start`  | Start local DFX replica                                     |
+| `npm run dev:deploy` | Deploy backend canister locally + regenerate bindings       |
+| `npm run build`      | Production build (`vite build` + PWA manifest via `pwa.js`) |
+| `npm run ic:deploy`  | Deploy all canisters to IC mainnet                          |
+| `npm run test`       | Run Vitest tests                                            |
+| `npm run coverage`   | Vitest with coverage (c8)                                   |
+| `npm run check`      | `svelte-check` type check                                   |
+| `npm run lint`       | Prettier + ESLint check                                     |
+| `npm run format`     | Prettier auto-format                                        |
 
 ## CI/CD
 
@@ -163,9 +164,11 @@ The project uses `legacy-peer-deps=true` (`.npmrc`) because several packages in 
 
 When adding new `@dfinity/*` packages, note that the entire `@dfinity` family (`agent`, `auth-client`, `candid`, `identity`, `principal`) must be kept at the same version since they are all strict peer deps of each other.
 
+`@noble/curves` and `@noble/hashes` are pinned to `^1.x` — do not upgrade them to `^2.x` until `@dfinity/identity` drops its `^1.x` peer dep requirement.
+
+ESLint uses the flat config format (`eslint.config.js`) — the old `.eslintrc` format is not used. The `eslint-plugin-svelte3` package has been replaced by `eslint-plugin-svelte`. `no-undef` is disabled for TypeScript files (TypeScript handles undefined variable checks). `@typescript-eslint/no-unused-vars` is configured to allow `_`-prefixed names as intentionally unused. `prettier-plugin-svelte` is registered via `.prettierrc`.
+
 ---
-
-
 
 This repository is a **git submodule** inside a parent Kubernetes monorepo (`apps/timer-counter`). The devcontainer is designed to work correctly when opened as a standalone VS Code instance without the parent repo being checked out.
 
@@ -180,15 +183,16 @@ This means commits made in the container go directly into the bind-mounted git d
 
 ### Key devcontainer mounts
 
-| Source (host) | Target (container) | Purpose |
-|---|---|---|
-| `~/.ssh/agent.sock` | `/ssh-agent` | SSH agent forwarding |
-| `~/.config/gh` | `/home/vscode/.config/gh` | GitHub CLI auth state |
-| `${localWorkspaceFolder}/../../.git` | `/.git` | Parent repo git dir for submodule resolution |
+| Source (host)                        | Target (container)        | Purpose                                      |
+| ------------------------------------ | ------------------------- | -------------------------------------------- |
+| `~/.ssh/agent.sock`                  | `/ssh-agent`              | SSH agent forwarding                         |
+| `~/.config/gh`                       | `/home/vscode/.config/gh` | GitHub CLI auth state                        |
+| `${localWorkspaceFolder}/../../.git` | `/.git`                   | Parent repo git dir for submodule resolution |
 
 ### postCreate.sh
 
 Runs on container creation. Responsibilities:
+
 - Installs `dnsutils` (`dig`, `nslookup`, `host`)
 - Checks and reports SSH agent accessibility
 - Configures GitHub CLI to use SSH protocol
@@ -197,9 +201,9 @@ Runs on container creation. Responsibilities:
 
 ## Canister Environments
 
-| Environment | Canister IDs source | DFX network flag |
-|---|---|---|
-| Local dev | `.dfx/local/canister_ids.json` (gitignored) | *(default/local)* |
-| IC mainnet | `canister_ids.json` (committed) | `--network ic` |
+| Environment | Canister IDs source                         | DFX network flag  |
+| ----------- | ------------------------------------------- | ----------------- |
+| Local dev   | `.dfx/local/canister_ids.json` (gitignored) | _(default/local)_ |
+| IC mainnet  | `canister_ids.json` (committed)             | `--network ic`    |
 
 `svelte.config.js` reads the appropriate file based on `NODE_ENV` and injects canister IDs as `process.env.<CANISTER_NAME>_CANISTER_ID` at build time.

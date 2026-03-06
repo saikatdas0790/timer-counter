@@ -1,5 +1,6 @@
 <div
-  class="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 my-4">
+  class="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 my-4"
+>
   <div class="animate-pulse">
     <div class="rounded-md bg-slate-700 h-24 w-auto my-4 mx-8" />
     <div class="flex flex-row justify-evenly mx-8">

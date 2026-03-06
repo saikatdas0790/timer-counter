@@ -10,6 +10,13 @@
   export let timers: ActorRefFrom<typeof timerCounterMachine>[];
 </script>
 
+<div>
+  {#each timers as timer (timer.id)}
+    <TimerCounter {timer} />
+  {/each}
+  <AddNewTimerCounter on:click={() => dispatch("newTimerCreated")} />
+</div>
+
 <style>
   div {
     display: grid;
@@ -19,10 +26,3 @@
     align-items: stretch;
   }
 </style>
-
-<div>
-  {#each timers as timer}
-    <TimerCounter {timer} />
-  {/each}
-  <AddNewTimerCounter on:click={() => dispatch("newTimerCreated")} />
-</div>
