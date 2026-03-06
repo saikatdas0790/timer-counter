@@ -1,37 +1,34 @@
 import js from "@eslint/js";
 import ts from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
-import svelte from "eslint-plugin-svelte";
 import prettier from "eslint-config-prettier";
 import globals from "globals";
+import nextPlugin from "@next/eslint-plugin-next";
 
 export default [
-  // global ignores (replaces .eslintignore / --ignore-path)
   {
-    ignores: [
-      "node_modules",
-      "build",
-      ".svelte-kit",
-      "package",
-      "coverage",
-      "src/declarations",
-      "**/*.typegen.ts",
-      "**/*.cjs",
-    ],
+    ignores: ["node_modules", ".next", "out", "coverage"],
   },
 
-  // base JS recommended
   js.configs.recommended,
 
-  // TypeScript files
   {
-    files: ["**/*.ts", "**/*.js", "**/*.svelte"],
+    plugins: { "@next/next": nextPlugin },
+    rules: {
+      ...nextPlugin.configs.recommended.rules,
+      ...nextPlugin.configs["core-web-vitals"].rules,
+    },
+  },
+
+  {
+    files: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs"],
     plugins: { "@typescript-eslint": ts },
     languageOptions: {
       parser: tsParser,
       parserOptions: {
         sourceType: "module",
         ecmaVersion: 2020,
+        jsx: true,
       },
       globals: {
         ...globals.browser,
@@ -49,22 +46,9 @@ export default [
           caughtErrorsIgnorePattern: "^_",
         },
       ],
-      // TypeScript handles undefined variables; no-undef causes false positives on type imports
       "no-undef": "off",
     },
   },
 
-  // Svelte files — use eslint-plugin-svelte flat config + override parser
-  ...svelte.configs["flat/recommended"],
-  {
-    files: ["**/*.svelte"],
-    languageOptions: {
-      parserOptions: {
-        parser: tsParser,
-      },
-    },
-  },
-
-  // Prettier must be last to disable conflicting formatting rules
   prettier,
 ];

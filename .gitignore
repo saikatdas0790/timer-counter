@@ -1,13 +1,11 @@
 .DS_Store
 node_modules
-/build
-/.svelte-kit
-/package
+/.next
+/out
 .env
 .env.*
 !.env.example
 coverage
-.dfx
 
 # Ansible
 ansible/.vault_pass
