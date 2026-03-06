@@ -19,7 +19,7 @@ If `HANDOFF.md` does not exist, no handoff is required — proceed normally.
 
 **timer-counter** is a SvelteKit Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline and syncs across devices using [Internet Identity](https://identity.ic0.app/) and a Motoko backend canister on the [Internet Computer (ICP)](https://internetcomputer.org/).
 
-- **Frontend**: SvelteKit (static adapter) + TypeScript + Tailwind CSS + XState v4
+- **Frontend**: SvelteKit v2 (static adapter) + TypeScript 5 + Tailwind CSS + XState v4
 - **Backend**: Motoko canister on ICP, managed by `dfx`
 - **Auth**: `@dfinity/auth-client` with Internet Identity
 - **Testing**: Vitest
@@ -40,13 +40,40 @@ src/
   routes/                     # SvelteKit file-based routes
 static/                       # Static assets served as-is
 .devcontainer/                # Dev container config (see Devcontainer section)
-.github/workflows/deploy.yml  # CI/CD — deploys to IC mainnet on push
+.github/workflows/docker.yml  # CI/CD — builds and pushes Docker image on push to main
+.npmrc                        # legacy-peer-deps=true (required for mixed dep tree)
 dfx.json                      # DFX canister + network config
 canister_ids.json             # Mainnet canister IDs (committed)
-svelte.config.js              # SvelteKit config, path aliases, Vite setup
+svelte.config.js              # SvelteKit config (adapter, aliases, preprocessor only)
+vite.config.js                # Vite config (plugins, define, server proxy)
 tailwind.config.cjs           # Tailwind config
 tsconfig.json                 # TypeScript config (extends .svelte-kit/tsconfig.json)
+pwa.js                        # Post-build script to copy PWA manifest + service worker
 ```
+
+---
+
+## Route File Conventions — SvelteKit v2
+
+This project uses SvelteKit v2's file-based routing conventions:
+
+- Page component: `+page.svelte` (was `index.svelte` in v1)
+- Layout component: `+layout.svelte` (was `__layout.svelte` in v1)
+- Page data loader: `+page.ts` / `+page.server.ts`
+- Layout data loader: `+layout.ts` / `+layout.server.ts`
+
+Do not create route files with the old v1 naming (unprefixed `index.svelte` or `__layout.svelte`).
+
+---
+
+## Vite vs SvelteKit Config Split
+
+In SvelteKit v2, Vite configuration is separated from SvelteKit configuration:
+
+- **`svelte.config.js`**: Only SvelteKit-specific options — adapter, aliases, preprocessor. Never put `plugins`, `define`, or `server` here.
+- **`vite.config.js`**: All Vite options — plugins (including `sveltekit()` and `VitePWA`), `define` (canister IDs, NODE_ENV), `server.proxy`.
+
+The `sveltekit()` plugin must be the first entry in `vite.config.js` plugins.
 
 ---
 
@@ -75,6 +102,8 @@ Three path aliases are configured in both `tsconfig.json` and `svelte.config.js`
 | `$routes/*` | `src/routes/*` |
 
 Always use these aliases for cross-directory imports instead of relative `../` paths.
+
+Do **not** re-declare these aliases in `tsconfig.json` — SvelteKit v2 auto-generates them in `.svelte-kit/tsconfig.json` (which `tsconfig.json` extends). Manual redeclaration causes intellisense conflicts.
 
 ---
 
@@ -107,10 +136,10 @@ All non-trivial state lives in XState v4 machines. Conventions:
 
 | Script | Purpose |
 |---|---|
-| `npm run dev` | Start SvelteKit dev server |
+| `npm run dev` | Start SvelteKit dev server (via Vite) |
 | `npm run dfx:start` | Start local DFX replica |
 | `npm run dev:deploy` | Deploy backend canister locally + regenerate bindings |
-| `npm run build` | Production build (SvelteKit + PWA manifest) |
+| `npm run build` | Production build (`vite build` + PWA manifest via `pwa.js`) |
 | `npm run ic:deploy` | Deploy all canisters to IC mainnet |
 | `npm run test` | Run Vitest tests |
 | `npm run coverage` | Vitest with coverage (c8) |
@@ -118,9 +147,25 @@ All non-trivial state lives in XState v4 machines. Conventions:
 | `npm run lint` | Prettier + ESLint check |
 | `npm run format` | Prettier auto-format |
 
+## CI/CD
+
+- Workflow: `.github/workflows/docker.yml`
+- Triggers on push to `main`.
+- Builds a Docker image using the `Dockerfile` and pushes to GitHub Container Registry (`ghcr.io`).
+- Image is tagged with a timestamp+SHA tag and `latest`.
+- The `Dockerfile` runs `npm ci` then `npm run build` and serves the static output via nginx.
+
 ---
 
-## Devcontainer
+## Dependency Notes
+
+The project uses `legacy-peer-deps=true` (`.npmrc`) because several packages in the dependency tree have unresolved peer dep conflicts (notably `@xstate/svelte@2` requires `svelte@^3`, and older eslint/prettier plugins have similar constraints). This is intentional and safe — do not remove `.npmrc`.
+
+When adding new `@dfinity/*` packages, note that the entire `@dfinity` family (`agent`, `auth-client`, `candid`, `identity`, `principal`) must be kept at the same version since they are all strict peer deps of each other.
+
+---
+
+
 
 This repository is a **git submodule** inside a parent Kubernetes monorepo (`apps/timer-counter`). The devcontainer is designed to work correctly when opened as a standalone VS Code instance without the parent repo being checked out.
 

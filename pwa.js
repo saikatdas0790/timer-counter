@@ -1,10 +1,12 @@
-import { copyFileSync } from "fs";
+import { copyFileSync, existsSync } from "fs";
 import { resolveConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { pwaConfiguration } from "./pwa-configuration.js";
 
-const webmanifestDestinations = ["./.svelte-kit/output/client", "./build/_app"];
+const webmanifestSource = "./.svelte-kit/output/client/manifest.webmanifest";
+const webmanifestDestinations = ["./build"];
 
+const swSource = "./.svelte-kit/output/client/sw.js";
 const swDestinations = ["./build/"];
 
 const buildPwa = async () => {
@@ -20,16 +22,17 @@ const buildPwa = async () => {
   if (pwaPlugin?.generateSW) {
     console.log("Generating PWA...");
     await pwaPlugin.generateSW();
-    webmanifestDestinations.forEach((d) => {
-      copyFileSync(
-        "./.svelte-kit/output/client/_app/immutable/manifest.webmanifest",
-        `${d}/manifest.webmanifest`,
-      );
-    });
+    if (existsSync(webmanifestSource)) {
+      webmanifestDestinations.forEach((d) => {
+        copyFileSync(webmanifestSource, `${d}/manifest.webmanifest`);
+      });
+    }
     // don't copy workbox, SvelteKit will copy it
-    swDestinations.forEach((d) => {
-      copyFileSync("./.svelte-kit/output/client/sw.js", `${d}/sw.js`);
-    });
+    if (existsSync(swSource)) {
+      swDestinations.forEach((d) => {
+        copyFileSync(swSource, `${d}/sw.js`);
+      });
+    }
     console.log("Generation of PWA complete");
   }
 };
