@@ -72,7 +72,7 @@ const timerCounterMachine = setup({
     resetTimerCountdown: assign({
       remainingTimeInSeconds: () => 0,
     }),
-    saveTimerStateToCanister: sendParent({
+    syncTimerState: sendParent({
       type: "TIMER_COUNTER_STATE_CHANGED",
     }),
     setTimerCountdown: assign({
@@ -101,16 +101,16 @@ const timerCounterMachine = setup({
   }),
   on: {
     TIMER_COUNTER_DECREMENTED: {
-      actions: ["decrementTimerCounter", "saveTimerStateToCanister"],
+      actions: ["decrementTimerCounter", "syncTimerState"],
     },
     TIMER_COUNTER_DELETED: {
-      actions: ["deleteTimerCounter", "saveTimerStateToCanister"],
+      actions: ["deleteTimerCounter", "syncTimerState"],
     },
     TIMER_COUNTER_INCREMENTED: {
-      actions: ["incrementTimerCounter", "saveTimerStateToCanister"],
+      actions: ["incrementTimerCounter", "syncTimerState"],
     },
     TIMER_COUNTER_LABEL_CHANGED: {
-      actions: ["updateTimerCounterLabel", "saveTimerStateToCanister"],
+      actions: ["updateTimerCounterLabel", "syncTimerState"],
     },
   },
   initial: "new",

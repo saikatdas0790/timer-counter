@@ -18,10 +18,12 @@ If `HANDOFF.md` does not exist, no handoff is required — proceed normally.
 
 ## Project Overview
 
-**timer-counter** is a Next.js Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline with client-side localStorage persistence. Backend sync (SpacetimeDB) and auth will be added in a future iteration.
+**timer-counter** is a Next.js Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline with client-side localStorage persistence. Authentication is provided by SpacetimeAuth (OIDC via `react-oidc-context`). Backend sync via SpacetimeDB will be wired up once the server module is published.
 
 - **Frontend**: Next.js v16 (static export) + TypeScript 5 + Tailwind CSS v4 + XState v5
-- **Persistence**: `localStorage` (client-only, no backend currently)
+- **Auth**: SpacetimeAuth (OIDC) via `react-oidc-context` + `oidc-client-ts`
+- **Persistence**: `localStorage` (client-only; SpacetimeDB sync is a future iteration)
+- **Backend**: SpacetimeDB (TypeScript server module in `spacetimedb/`)
 - **Testing**: Vitest
 - **Formatting/Linting**: Prettier + ESLint
 
@@ -33,15 +35,23 @@ If `HANDOFF.md` does not exist, no handoff is required — proceed normally.
 src/
   app/                        # Next.js App Router
     globals.css               # Global Tailwind base styles
-    layout.tsx                # Root layout (HTML shell + metadata)
-    page.tsx                  # Home page (client component, mounts timerListMachine)
+    layout.tsx                # Root layout (HTML shell + OidcProvider wrapper)
+    page.tsx                  # Home page (client component, mounts timerListMachine behind AuthGate)
   components/                 # UI — follows atomic design (see below)
+    OidcProvider.tsx          # react-oidc-context AuthProvider wrapper ("use client")
   lib/
     timerListMachine.ts       # Root XState machine (timer list + localStorage)
     timerListContext.tsx       # createActorContext wrapper for timerListMachine
+spacetimedb/                   # SpacetimeDB server module (spacetime init)
+  spacetimedb/                # TypeScript server module (published to Maincloud)
+  src/module_bindings/        # Generated TS bindings (spacetime:generate — do not edit)
+  spacetime.json              # Module config (server: maincloud)
+  .env.local                  # SpacetimeDB host + DB name (not gitignored in spacetimedb/)
 static/                       # Static assets served as-is
 .devcontainer/                # Dev container config (see Devcontainer section)
-.github/workflows/deploy.yml  # CI/CD — builds and deploys to GitHub Pages on push to main
+.github/
+  workflows/deploy.yml        # CI/CD — builds and deploys to GitHub Pages on push to main
+  dependabot.yml              # Automated dependency updates (npm + devcontainers, weekly)
 .npmrc                        # npm config (currently empty)
 ansible.cfg                   # Ansible config — at root so commands run from repo root
 ansible/                      # Ansible playbooks and secrets (see ansible/README.md)
@@ -69,9 +79,9 @@ Do not create SvelteKit route files (`+page.svelte`, `+layout.svelte`, etc.).
 
 The `@/*` alias resolves to `src/*` and is configured in `tsconfig.json`.
 
-| Alias   | Resolves to |
-| ------- | ----------- |
-| `@/*`   | `src/*`     |
+| Alias | Resolves to |
+| ----- | ----------- |
+| `@/*` | `src/*`     |
 
 Always use `@/components/...`, `@/lib/...`, etc. for cross-directory imports.
 
@@ -116,17 +126,51 @@ All non-trivial state lives in XState v5 machines. Conventions:
 
 ---
 
+## Authentication — SpacetimeAuth + react-oidc-context
+
+Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google as the identity provider.
+
+- **Library**: `react-oidc-context` + `oidc-client-ts`
+- **Authority**: `https://auth.spacetimedb.com/oidc`
+- **Client ID**: `client_032dnbwPlt1yJpQgZmVB3e` — public identifier; stored as plaintext in `ansible/vars/main.yml`, exposed as `NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_ID` via `ansible/templates/env.j2`
+- **Client secret**: sensitive; stored in Ansible Vault (`vault_spacetimedb_auth_client_secret`), exposed as `NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_SECRET`
+- **Token storage**: `sessionStorage` (oidc-client-ts default). JS-set cookies are NOT recommended per IETF draft-ietf-oauth-browser-based-apps §8.1 for browser-only SPAs. True HttpOnly cookie security needs a BFF server, which this app does not have.
+- **Redirect URI**: `window.location.origin` (root `/`) — no `/callback` route needed. `onSigninCallback` uses `window.history.replaceState` to clean up `?code=&state=` from the URL after exchange.
+- **Silent renew**: `automaticSilentRenew: true` — uses refresh tokens, not iframes.
+- **`OidcProvider`**: `src/components/OidcProvider.tsx` — `"use client"` wrapper around `AuthProvider`. Placed in `src/app/layout.tsx` wrapping `{children}`.
+- **`AuthGate`**: `src/components/organism/AuthGate.tsx` — `"use client"`, uses `useAuth()`. Shows a "Sign in with Google" button when unauthenticated; renders children when authenticated. No sign-out UI.
+- **Page structure**: `<OidcProvider>` (layout) → `<AuthGate>` → `<TimerListContext.Provider>` → `<PageContent>` (page.tsx)
+
+### SpacetimeAuth dashboard setup (one-time, manual)
+
+1. Deploy the SpacetimeDB module: `cd spacetimedb && npm run spacetime:publish`
+2. In the SpacetimeDB dashboard → your module → **SpacetimeAuth** tab → enable it
+3. **Identity Providers** tab → add Google → paste your Google OAuth Client ID + Secret (authorized redirect URI for Google: `https://auth.spacetimedb.com/interactions/federated/callback/google`)
+4. **Clients** tab → register redirect URIs: `http://localhost:3000` and `https://timer-counter.saikat.dev`
+
+---
+
+## SpacetimeDB
+
+- Server module: `spacetimedb/` (TypeScript, publishes to `maincloud.spacetimedb.com`)
+- Generated bindings: `spacetimedb/src/module_bindings/` — auto-generated, do not edit manually
+- To regenerate bindings after publishing module changes: `cd spacetimedb && npm run spacetime:generate`
+- To publish module: `cd spacetimedb && npm run spacetime:publish`
+- `spacetimedb/dist/` is gitignored (build artifact)
+
+---
+
 ## Scripts Reference
 
-| Script               | Purpose                                             |
-| -------------------- | --------------------------------------------------- |
-| `npm run dev`        | Start Next.js dev server                            |
-| `npm run build`      | Production build (static export to `out/`)          |
-| `npm run start`      | Serve the static export locally                     |
-| `npm run test`       | Run Vitest tests                                    |
-| `npm run coverage`   | Vitest with coverage (c8)                           |
-| `npm run lint`       | Prettier + ESLint check                             |
-| `npm run format`     | Prettier auto-format                                |
+| Script             | Purpose                                    |
+| ------------------ | ------------------------------------------ |
+| `npm run dev`      | Start Next.js dev server                   |
+| `npm run build`    | Production build (static export to `out/`) |
+| `npm run start`    | Serve the static export locally            |
+| `npm run test`     | Run Vitest tests                           |
+| `npm run coverage` | Vitest with coverage (c8)                  |
+| `npm run lint`     | Prettier + ESLint check                    |
+| `npm run format`   | Prettier auto-format                       |
 
 ## CI/CD
 
@@ -134,6 +178,7 @@ All non-trivial state lives in XState v5 machines. Conventions:
 - Triggers on push to `main`.
 - **Builds run inside the devcontainer** via `devcontainers/ci@v0.3`, so CI is byte-for-byte identical to the local dev environment. The devcontainer image is cached in GHCR under `ghcr.io/<owner>/timer-counter-devcontainer`.
 - The runner creates placeholder stubs for the two devcontainer bind-mount sources that don't exist in CI (`~/.ssh/agent.sock` and `~/.config/gh`) before launching the container.
+- **Secrets in CI**: GitHub secrets/vars are passed into the devcontainer via the `env:` block on the `devcontainers/ci` step. `postCreate.sh` detects the presence of `SPACETIMEDB_TOKEN` in the environment (no vault password in CI) and writes `.env` directly from those env vars. This keeps CI and local behaviour in the same code path — never write `.env` from outside the devcontainer in workflow steps.
 - Build output (`out/`) is uploaded as a GitHub Pages artifact and deployed via `actions/deploy-pages@v4`.
 - Custom domain: `timer-counter.saikat.dev` (configured via `static/CNAME`). DNS is a proxied Cloudflare CNAME pointing to `saikatdas0790.github.io`.
 - SPA routing: Next.js `output: 'export'` generates static HTML. The `404.html` fallback handles unmatched routes for GitHub Pages.
@@ -150,6 +195,7 @@ DNS is managed via Ansible + Cloudflare API. `ansible.cfg` lives at the repo roo
 - `postCreate.sh` auto-runs `ansible/setup_env.yml` on devcontainer start if `ansible/.vault_pass` is present, generating `.env` with the Cloudflare token.
 
 First-time setup (see `ansible/README.md` for full details):
+
 ```bash
 cp ansible/vars/vault.yml.example ansible/vars/vault.yml
 # fill in your Cloudflare API token, then:
@@ -158,6 +204,7 @@ ansible-vault encrypt ansible/vars/vault.yml
 ```
 
 To apply DNS changes:
+
 ```bash
 ansible-playbook ansible/manage_dns.yml
 ```
@@ -178,15 +225,17 @@ Tailwind CSS v4 uses the `@tailwindcss/postcss` PostCSS plugin. The only Tailwin
 
 ESLint uses the flat config format (`eslint.config.js`) — the old `.eslintrc` format is not used. `no-undef` is disabled for TypeScript files (TypeScript handles undefined variable checks). `@typescript-eslint/no-unused-vars` is configured to allow `_`-prefixed names as intentionally unused.
 
+`react-oidc-context` wraps `oidc-client-ts`. Import `useAuth` and `AuthProvider` from `react-oidc-context` only — do not import from `oidc-client-ts` directly unless accessing lower-level types.
+
 ---
 
 ## Devcontainer
 
 ### Key devcontainer mounts
 
-| Source (host)       | Target (container)        | Purpose              |
-| ------------------- | ------------------------- | -------------------- |
-| `~/.ssh/agent.sock` | `/ssh-agent`              | SSH agent forwarding |
+| Source (host)       | Target (container)        | Purpose               |
+| ------------------- | ------------------------- | --------------------- |
+| `~/.ssh/agent.sock` | `/ssh-agent`              | SSH agent forwarding  |
 | `~/.config/gh`      | `/home/vscode/.config/gh` | GitHub CLI auth state |
 
 ### postCreate.sh
@@ -194,9 +243,12 @@ ESLint uses the flat config format (`eslint.config.js`) — the old `.eslintrc` 
 Runs on container creation. Responsibilities:
 
 - Installs `dnsutils` (`dig`, `nslookup`, `host`)
+- Installs SpacetimeDB CLI
 - Checks and reports SSH agent accessibility
 - Configures GitHub CLI to use SSH protocol
+- Runs `npm install` at repo root
+- Runs `npm install` in `spacetimedb/` and `spacetimedb/`
+- **Local**: if `ansible/.vault_pass` is present, generates `.env` from vault, authenticates SpacetimeDB CLI, and runs `spacetime:generate`
+- **CI**: if `SPACETIMEDB_TOKEN` env var is present (injected by `devcontainers/ci` `env:` block), writes `.env` directly from environment variables, then authenticates and runs `spacetime:generate`
 
 ---
-
-

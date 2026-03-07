@@ -13,48 +13,51 @@ import TimerLabel from "@/components/atom/input/TimerLabel";
 import RemoveTimer from "@/components/atom/button/RemoveTimer";
 
 interface Props {
-    timer: ActorRefFrom<typeof timerCounterMachine>;
+  timer: ActorRefFrom<typeof timerCounterMachine>;
 }
 
 export default function TimerCounter({ timer }: Props) {
-    const snapshot = useSelector(timer, (s) => s);
-    const workerRef = useRef<Worker | null>(null);
+  const snapshot = useSelector(timer, (s) => s);
+  const workerRef = useRef<Worker | null>(null);
 
-    useEffect(() => {
-        workerRef.current = new Worker(
-            new URL("./TimerWorker.ts", import.meta.url),
-        );
-        workerRef.current.addEventListener("message", (e) => {
-            if (e.data === "ONE_SECOND_ELAPSED") {
-                timer.send({ type: "ONE_SECOND_ELAPSED" });
-            }
-        });
-        return () => {
-            workerRef.current?.terminate();
-        };
-    }, [timer]);
-
-    return (
-        <div className="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 flex flex-col justify-between gap-8 duration-500 py-8">
-            <TimerDisplay timer={timer} />
-            {(snapshot.matches("new") || snapshot.matches("timerSet")) && (
-                <TimerSelectButtonCluster timer={timer} />
-            )}
-            <TimerControllerCluster timer={timer} />
-            <Divider />
-            <Counter timer={timer} />
-            <Divider />
-            <TimerLabel
-                textToDisplay={snapshot.context.timerLabel}
-                onInput={(value) =>
-                    timer.send({ type: "TIMER_COUNTER_LABEL_CHANGED", updatedLabel: value })
-                }
-            />
-            <RemoveTimer
-                onClick={() =>
-                    timer.send({ type: "TIMER_COUNTER_DELETED", timerId: timer.id })
-                }
-            />
-        </div>
+  useEffect(() => {
+    workerRef.current = new Worker(
+      new URL("./TimerWorker.ts", import.meta.url),
     );
+    workerRef.current.addEventListener("message", (e) => {
+      if (e.data === "ONE_SECOND_ELAPSED") {
+        timer.send({ type: "ONE_SECOND_ELAPSED" });
+      }
+    });
+    return () => {
+      workerRef.current?.terminate();
+    };
+  }, [timer]);
+
+  return (
+    <div className="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 flex flex-col justify-between gap-8 duration-500 py-8">
+      <TimerDisplay timer={timer} />
+      {(snapshot.matches("new") || snapshot.matches("timerSet")) && (
+        <TimerSelectButtonCluster timer={timer} />
+      )}
+      <TimerControllerCluster timer={timer} />
+      <Divider />
+      <Counter timer={timer} />
+      <Divider />
+      <TimerLabel
+        textToDisplay={snapshot.context.timerLabel}
+        onInput={(value) =>
+          timer.send({
+            type: "TIMER_COUNTER_LABEL_CHANGED",
+            updatedLabel: value,
+          })
+        }
+      />
+      <RemoveTimer
+        onClick={() =>
+          timer.send({ type: "TIMER_COUNTER_DELETED", timerId: timer.id })
+        }
+      />
+    </div>
+  );
 }

@@ -9,3 +9,6 @@ coverage
 
 # Ansible
 ansible/.vault_pass
+
+# SpacetimeDB build output
+spacetimedb/dist

@@ -1,8 +1,0 @@
-{
-  "backend_canister": {
-    "ic": "gf7sw-hiaaa-aaaam-qapyq-cai"
-  },
-  "frontend_canister": {
-    "ic": "72obb-tyaaa-aaaap-aae5q-cai"
-  }
-}

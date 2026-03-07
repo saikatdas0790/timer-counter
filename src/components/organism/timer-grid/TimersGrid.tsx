@@ -6,25 +6,25 @@ import TimerCounterComponent from "@/components/molecule/timer/timer-counter/Tim
 import AddNewTimerCounter from "@/components/molecule/timer/AddNewTimerCounter";
 
 interface Props {
-    timers: ActorRefFrom<typeof timerCounterMachine>[];
-    onNewTimerCreated: () => void;
+  timers: ActorRefFrom<typeof timerCounterMachine>[];
+  onNewTimerCreated: () => void;
 }
 
 export default function TimersGrid({ timers, onNewTimerCreated }: Props) {
-    return (
-        <div
-            style={{
-                display: "grid",
-                gap: "1rem",
-                gridTemplateColumns: "repeat(auto-fill, minmax(24rem, 1fr))",
-                justifyItems: "center",
-                alignItems: "stretch",
-            }}
-        >
-            {timers.map((timer) => (
-                <TimerCounterComponent key={timer.id} timer={timer} />
-            ))}
-            <AddNewTimerCounter onNewTimer={onNewTimerCreated} />
-        </div>
-    );
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: "1rem",
+        gridTemplateColumns: "repeat(auto-fill, minmax(24rem, 1fr))",
+        justifyItems: "center",
+        alignItems: "stretch",
+      }}
+    >
+      {timers.map((timer) => (
+        <TimerCounterComponent key={timer.id} timer={timer} />
+      ))}
+      <AddNewTimerCounter onNewTimer={onNewTimerCreated} />
+    </div>
+  );
 }
