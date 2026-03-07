@@ -5,12 +5,14 @@ Secrets are managed with [Ansible Vault](https://docs.ansible.com/ansible/latest
 ## First-Time Setup
 
 1. Copy the vault example and fill in your Cloudflare API token:
+
    ```bash
    cp ansible/vars/vault.yml.example ansible/vars/vault.yml
    # edit ansible/vars/vault.yml with your real token
    ```
 
 2. Write your vault password and encrypt:
+
    ```bash
    echo 'your_vault_password' > ansible/.vault_pass && chmod 600 ansible/.vault_pass
    ansible-vault encrypt ansible/vars/vault.yml
@@ -39,9 +41,10 @@ ansible/
 ## Variable Naming Convention
 
 - **`vars/main.yml`** (committed) — public identifiers in plaintext; sensitive values reference the vault:
+
   ```yaml
-  cloudflare_api_token: "{{ vault_cloudflare_api_token }}"  # sensitive → vault
-  cloudflare_zone_id: "4250af23497bb7a306e4450a7709a997"    # public — plaintext is fine
+  cloudflare_api_token: "{{ vault_cloudflare_api_token }}" # sensitive → vault
+  cloudflare_zone_id: "4250af23497bb7a306e4450a7709a997" # public — plaintext is fine
   ```
 
 - **`vars/vault.yml`** (encrypted, committed) — only truly secret values:

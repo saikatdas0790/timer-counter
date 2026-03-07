@@ -13,7 +13,7 @@
       template:
         src: templates/env.j2
         dest: "{{ playbook_dir }}/../.env"
-        mode: '0600'
+        mode: "0600"
       no_log: true
 
     - name: Verify .env file was created
