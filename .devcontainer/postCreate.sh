@@ -96,33 +96,38 @@ if [ -f "ansible/.vault_pass" ]; then
             fi
         fi
     fi
-elif [ -n "${SPACETIMEDB_TOKEN}" ]; then
-    # CI path: no vault, but secrets are injected via devcontainers/ci env block
-    echo "ℹ️  No vault — writing .env from environment variables (CI mode)..."
-    {
-        echo "SPACETIMEDB_TOKEN=${SPACETIMEDB_TOKEN}"
-        echo "NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_ID=${SPACETIMEDB_AUTH_CLIENT_ID}"
-        echo "NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_SECRET=${SPACETIMEDB_AUTH_CLIENT_SECRET}"
-    } > .env
-    chmod 600 .env
-    echo "✓ .env written from environment"
+elif [ -n "${ANSIBLE_VAULT_PASSWORD}" ]; then
+    # CI path: vault password injected via devcontainers/ci env block
+    echo "ℹ️  Writing vault password from environment (CI mode)..."
+    echo "${ANSIBLE_VAULT_PASSWORD}" > ansible/.vault_pass
+    chmod 600 ansible/.vault_pass
+    echo "✓ Vault password written"
+    echo "Generating .env from vault..."
+    (ansible-playbook ansible/setup_env.yml)
+    echo "✓ .env generated"
 
-    echo ""
-    echo "Authenticating SpacetimeDB CLI..."
-    if spacetime login --token "$SPACETIMEDB_TOKEN" --no-browser; then
-        echo "✓ SpacetimeDB CLI authenticated"
+    # Authenticate SpacetimeDB if token is available
+    if [ -f ".env" ]; then
+        source .env
+        if [ -n "$SPACETIMEDB_TOKEN" ]; then
+            echo ""
+            echo "Authenticating SpacetimeDB CLI..."
+            if spacetime login --token "$SPACETIMEDB_TOKEN" --no-browser; then
+                echo "✓ SpacetimeDB CLI authenticated"
 
-        # Generate TypeScript bindings from the published module
-        echo ""
-        echo "Generating SpacetimeDB TypeScript bindings..."
-        if (cd spacetimedb && npm run spacetime:generate 2>/dev/null); then
-            echo "✓ TypeScript bindings generated"
-        else
-            echo "ℹ️  Bindings not generated (module may not be published yet)"
-            echo "  Run: cd spacetimedb && npm run spacetime:generate"
+                # Generate TypeScript bindings from the published module
+                echo ""
+                echo "Generating SpacetimeDB TypeScript bindings..."
+                if (cd spacetimedb && npm run spacetime:generate 2>/dev/null); then
+                    echo "✓ TypeScript bindings generated"
+                else
+                    echo "ℹ️  Bindings not generated (module may not be published yet)"
+                    echo "  Run: cd spacetimedb && npm run spacetime:generate"
+                fi
+            else
+                echo "⚠ Failed to authenticate SpacetimeDB CLI"
+            fi
         fi
-    else
-        echo "⚠ Failed to authenticate SpacetimeDB CLI"
     fi
 elif [ -f "ansible/vars/vault.yml" ]; then
     echo "⚠ vault.yml exists but no .vault_pass found"

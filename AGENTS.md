@@ -178,7 +178,7 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 - Triggers on push to `main`.
 - **Builds run inside the devcontainer** via `devcontainers/ci@v0.3`, so CI is byte-for-byte identical to the local dev environment. The devcontainer image is cached in GHCR under `ghcr.io/<owner>/timer-counter-devcontainer`.
 - The runner creates placeholder stubs for the two devcontainer bind-mount sources that don't exist in CI (`~/.ssh/agent.sock` and `~/.config/gh`) before launching the container.
-- **Secrets in CI**: GitHub secrets/vars are passed into the devcontainer via the `env:` block on the `devcontainers/ci` step. `postCreate.sh` detects the presence of `SPACETIMEDB_TOKEN` in the environment (no vault password in CI) and writes `.env` directly from those env vars. This keeps CI and local behaviour in the same code path — never write `.env` from outside the devcontainer in workflow steps.
+- **Secrets in CI**: The only secret CI needs is `ANSIBLE_VAULT_PASSWORD` (a GitHub secret). It is injected into the devcontainer via the `env:` block on the `devcontainers/ci` step. `postCreate.sh` detects it, writes `ansible/.vault_pass`, and then runs the exact same `ansible/setup_env.yml` playbook as local. This keeps CI and local behaviour in the same code path — the vault is always the source of truth. Never pass individual secret values (tokens, client secrets, etc.) as separate CI env vars; never write `.env` from outside the devcontainer in workflow steps.
 - Build output (`out/`) is uploaded as a GitHub Pages artifact and deployed via `actions/deploy-pages@v4`.
 - Custom domain: `timer-counter.saikat.dev` (configured via `static/CNAME`). DNS is a proxied Cloudflare CNAME pointing to `saikatdas0790.github.io`.
 - SPA routing: Next.js `output: 'export'` generates static HTML. The `404.html` fallback handles unmatched routes for GitHub Pages.
@@ -249,6 +249,6 @@ Runs on container creation. Responsibilities:
 - Runs `npm install` at repo root
 - Runs `npm install` in `spacetimedb/` and `spacetimedb/`
 - **Local**: if `ansible/.vault_pass` is present, generates `.env` from vault, authenticates SpacetimeDB CLI, and runs `spacetime:generate`
-- **CI**: if `SPACETIMEDB_TOKEN` env var is present (injected by `devcontainers/ci` `env:` block), writes `.env` directly from environment variables, then authenticates and runs `spacetime:generate`
+- **CI**: if `ANSIBLE_VAULT_PASSWORD` env var is present (injected by `devcontainers/ci` `env:` block), writes `ansible/.vault_pass` from it, then follows the exact same Ansible path as local
 
 ---

@@ -50,9 +50,7 @@ jobs:
           runCmd: .devcontainer/postCreate.sh && npm ci && npm run build
           push: filter
           env: |
-            SPACETIMEDB_TOKEN=${{ secrets.SPACETIMEDB_TOKEN }}
-            SPACETIMEDB_AUTH_CLIENT_ID=${{ vars.SPACETIMEDB_AUTH_CLIENT_ID }}
-            SPACETIMEDB_AUTH_CLIENT_SECRET=${{ secrets.SPACETIMEDB_AUTH_CLIENT_SECRET }}
+            ANSIBLE_VAULT_PASSWORD=${{ secrets.ANSIBLE_VAULT_PASSWORD }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
