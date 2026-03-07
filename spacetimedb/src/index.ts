@@ -1,27 +1,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { schema, t, table, SenderError } from 'spacetimedb/server';
+import { schema, t, table, SenderError } from "spacetimedb/server";
 
 const user = table(
-  { name: 'user', public: true },
+  { name: "user", public: true },
   {
     identity: t.identity().primaryKey(),
     name: t.string().optional(),
     online: t.bool(),
-  }
+  },
 );
 
 const message = table(
-  { name: 'message', public: true },
-  { sender: t.identity(), sent: t.timestamp(), text: t.string() }
+  { name: "message", public: true },
+  { sender: t.identity(), sent: t.timestamp(), text: t.string() },
 );
 
 const spacetimedb = schema({ user, message });
 export default spacetimedb;
 
 function validateName(name: string) {
-  if (!name) throw new SenderError('Names must not be empty');
+  if (!name) throw new SenderError("Names must not be empty");
 }
 
 export const set_name = spacetimedb.reducer(
@@ -29,14 +29,14 @@ export const set_name = spacetimedb.reducer(
   (ctx, { name }) => {
     validateName(name);
     const user = ctx.db.user.identity.find(ctx.sender);
-    if (!user) throw new SenderError('Cannot set name for unknown user');
+    if (!user) throw new SenderError("Cannot set name for unknown user");
     console.info(`User ${ctx.sender} sets name to ${name}`);
     ctx.db.user.identity.update({ ...user, name });
-  }
+  },
 );
 
 function validateMessage(text: string) {
-  if (!text) throw new SenderError('Messages must not be empty');
+  if (!text) throw new SenderError("Messages must not be empty");
 }
 
 export const send_message = spacetimedb.reducer(
@@ -52,13 +52,13 @@ export const send_message = spacetimedb.reducer(
       text,
       sent: ctx.timestamp,
     });
-  }
+  },
 );
 
 // Called when the module is initially published
-export const init = spacetimedb.init(_ctx => {});
+export const init = spacetimedb.init((_ctx) => {});
 
-export const onConnect = spacetimedb.clientConnected(ctx => {
+export const onConnect = spacetimedb.clientConnected((ctx) => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     // If this is a returning user, i.e. we already have a `User` with this `Identity`,
@@ -75,7 +75,7 @@ export const onConnect = spacetimedb.clientConnected(ctx => {
   }
 });
 
-export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
+export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
   const user = ctx.db.user.identity.find(ctx.sender);
   if (user) {
     ctx.db.user.identity.update({ ...user, online: false });
@@ -83,7 +83,7 @@ export const onDisconnect = spacetimedb.clientDisconnected(ctx => {
     // This branch should be unreachable,
     // as it doesn't make sense for a client to disconnect without connecting first.
     console.warn(
-      `Disconnect event for unknown user with identity ${ctx.sender}`
+      `Disconnect event for unknown user with identity ${ctx.sender}`,
     );
   }
 });
