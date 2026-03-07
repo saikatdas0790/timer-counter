@@ -48,6 +48,12 @@ echo "Installing npm dependencies..."
 npm install
 echo "✓ npm dependencies installed"
 
+# Install SpacetimeDB project dependencies
+echo ""
+echo "Installing SpacetimeDB project dependencies..."
+(cd spacetimedb && npm install)
+echo "✓ SpacetimeDB module dependencies installed"
+
 # Check gh authentication status
 echo ""
 echo "Checking GitHub CLI authentication..."
@@ -74,6 +80,16 @@ if [ -f "ansible/.vault_pass" ]; then
             echo "Authenticating SpacetimeDB CLI..."
             if spacetime login --token "$SPACETIMEDB_TOKEN" --no-browser; then
                 echo "✓ SpacetimeDB CLI authenticated"
+
+                # Generate TypeScript bindings from the published module
+                echo ""
+                echo "Generating SpacetimeDB TypeScript bindings..."
+                if (cd spacetimedb && npm run spacetime:generate 2>/dev/null); then
+                    echo "✓ TypeScript bindings generated"
+                else
+                    echo "ℹ️  Bindings not generated (module may not be published yet)"
+                    echo "  Run: cd spacetime-db && npm run spacetime:generate"
+                fi
             else
                 echo "⚠ Failed to authenticate SpacetimeDB CLI"
             fi
