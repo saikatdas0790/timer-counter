@@ -4,4 +4,4 @@
 
 vault_cloudflare_api_token: "your_cloudflare_api_token_here"
 vault_spacetimedb_token: "your_spacetimedb_token_here"
-vault_spacetimedb_auth_client_secret: "your_spacetimedb_auth_client_secret_here"
+

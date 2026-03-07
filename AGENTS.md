@@ -133,7 +133,7 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 - **Library**: `react-oidc-context` + `oidc-client-ts`
 - **Authority**: `https://auth.spacetimedb.com/oidc`
 - **Client ID**: `client_032dnbwPlt1yJpQgZmVB3e` — public identifier; stored as plaintext in `ansible/vars/main.yml`, exposed as `NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_ID` via `ansible/templates/env.j2`
-- **Client secret**: sensitive; stored in Ansible Vault (`vault_spacetimedb_auth_client_secret`), exposed as `NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_SECRET`
+- **Client secret**: not used. SpacetimeAuth registers browser clients as public OIDC clients (`token_endpoint_auth_method: none`). PKCE (`S256`) is the security mechanism for the code exchange — no `client_secret` is sent or needed.
 - **Token storage**: `sessionStorage` (oidc-client-ts default). JS-set cookies are NOT recommended per IETF draft-ietf-oauth-browser-based-apps §8.1 for browser-only SPAs. True HttpOnly cookie security needs a BFF server, which this app does not have.
 - **Redirect URI**: `window.location.origin` (root `/`) — no `/callback` route needed. `onSigninCallback` uses `window.history.replaceState` to clean up `?code=&state=` from the URL after exchange.
 - **Silent renew**: `automaticSilentRenew: true` — uses refresh tokens, not iframes.
