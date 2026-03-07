@@ -1,0 +1,3 @@
+- Websockets not syncing the time. Fix this and write tests for it.
+- PWA install not appearing. Fix this and write tests for it.
+- When timer running, request user for permission to keep the tab awake. If permission granted, use the Wake Lock API to keep the tab awake while the timer is running
