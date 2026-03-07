@@ -10,7 +10,12 @@ import CreateTimerCounterReducer from "../create_timer_counter_reducer";
 import DeleteTimerCounterReducer from "../delete_timer_counter_reducer";
 import UpdateTimerCounterReducer from "../update_timer_counter_reducer";
 
-export type CreateTimerCounterParams = __Infer<typeof CreateTimerCounterReducer>;
-export type DeleteTimerCounterParams = __Infer<typeof DeleteTimerCounterReducer>;
-export type UpdateTimerCounterParams = __Infer<typeof UpdateTimerCounterReducer>;
-
+export type CreateTimerCounterParams = __Infer<
+  typeof CreateTimerCounterReducer
+>;
+export type DeleteTimerCounterParams = __Infer<
+  typeof DeleteTimerCounterReducer
+>;
+export type UpdateTimerCounterParams = __Infer<
+  typeof UpdateTimerCounterReducer
+>;

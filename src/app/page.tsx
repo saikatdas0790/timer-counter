@@ -5,6 +5,7 @@ import TimersGrid from "@/components/organism/timer-grid/TimersGrid";
 import TimerSkeletonGrid from "@/components/organism/timer-grid/TimerSkeletonGrid";
 import { TimerListContext } from "@/lib/timerListContext";
 import AuthGate from "@/components/organism/AuthGate";
+import { SyncBridge } from "@/components/SyncBridge";
 
 function PageContent() {
   const snapshot = TimerListContext.useSelector((s) => s);
@@ -36,6 +37,7 @@ export default function Home() {
   return (
     <AuthGate>
       <TimerListContext.Provider>
+        <SyncBridge />
         <PageContent />
       </TimerListContext.Provider>
     </AuthGate>

@@ -18,4 +18,3 @@ export const TimerCounter = __t.object("TimerCounter", {
   remainingTimeSeconds: __t.u32(),
 });
 export type TimerCounter = __Infer<typeof TimerCounter>;
-
