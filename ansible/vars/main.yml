@@ -7,6 +7,9 @@ cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
 cloudflare_zone_id: "4250af23497bb7a306e4450a7709a997"       # saikat.dev zone
 cloudflare_account_id: "21783118d91fac275d5bc116c37da809"    # Cloudflare account ID
 
+# SpacetimeDB Configuration
+spacetimedb_token: "{{ vault_spacetimedb_token }}"
+
 # DNS record
 dns_record_name: "timer-counter"          # subdomain (timer-counter.saikat.dev)
 dns_record_content: "saikatdas0790.github.io"

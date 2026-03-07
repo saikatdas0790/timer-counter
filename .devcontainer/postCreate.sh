@@ -14,6 +14,12 @@ echo "Installing system packages..."
 sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils
 echo "✓ Installed dnsutils (dig, nslookup, host)"
 
+# SpacetimeDB CLI
+echo ""
+echo "Installing SpacetimeDB CLI..."
+curl -sSf https://install.spacetimedb.com | sh -s -- -y
+echo "✓ SpacetimeDB CLI installed"
+
 # Check SSH Agent accessibility
 echo ""
 echo "Checking SSH Agent..."
@@ -59,6 +65,20 @@ if [ -f "ansible/.vault_pass" ]; then
     echo "✓ Vault password found, generating .env..."
     (ansible-playbook ansible/setup_env.yml)
     echo "✓ .env generated"
+    
+    # Authenticate SpacetimeDB if token is available
+    if [ -f ".env" ]; then
+        source .env
+        if [ -n "$SPACETIMEDB_TOKEN" ]; then
+            echo ""
+            echo "Authenticating SpacetimeDB CLI..."
+            if spacetime login --token "$SPACETIMEDB_TOKEN" --no-browser; then
+                echo "✓ SpacetimeDB CLI authenticated"
+            else
+                echo "⚠ Failed to authenticate SpacetimeDB CLI"
+            fi
+        fi
+    fi
 elif [ -f "ansible/vars/vault.yml" ]; then
     echo "⚠ vault.yml exists but no .vault_pass found"
     echo "  Set your vault password: echo 'your_password' > ansible/.vault_pass && chmod 600 ansible/.vault_pass"
