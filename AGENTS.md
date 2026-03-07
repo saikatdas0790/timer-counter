@@ -18,13 +18,13 @@ If `HANDOFF.md` does not exist, no handoff is required — proceed normally.
 
 ## Project Overview
 
-**timer-counter** is a Next.js Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline with client-side localStorage persistence. Authentication is provided by SpacetimeAuth (OIDC via `react-oidc-context`). Backend sync via SpacetimeDB will be wired up once the server module is published.
+**timer-counter** is a Next.js Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline with client-side localStorage persistence and syncs across devices via SpacetimeDB when authenticated. Authentication is provided by SpacetimeAuth (OIDC via `react-oidc-context`).
 
 - **Frontend**: Next.js v16 (static export) + TypeScript 5 + Tailwind CSS v4 + XState v5
 - **Auth**: SpacetimeAuth (OIDC) via `react-oidc-context` + `oidc-client-ts`
-- **Persistence**: `localStorage` (client-only; SpacetimeDB sync is a future iteration)
+- **Persistence**: `localStorage` (fast load / offline cache) + SpacetimeDB (authoritative cross-device sync)
 - **Backend**: SpacetimeDB (TypeScript server module in `spacetimedb/`)
-- **Testing**: Vitest
+- **Testing**: Vitest v4 + jsdom
 - **Formatting/Linting**: Prettier + ESLint
 
 ---
@@ -39,14 +39,20 @@ src/
     page.tsx                  # Home page (client component, mounts timerListMachine behind AuthGate)
   components/                 # UI — follows atomic design (see below)
     OidcProvider.tsx          # react-oidc-context AuthProvider wrapper ("use client")
+    SyncBridge.tsx            # Headless component: bridges timerListMachine ↔ SpacetimeDB
   lib/
-    timerListMachine.ts       # Root XState machine (timer list + localStorage)
+    timerListMachine.ts       # Root XState machine (timer list + localStorage + STDB events)
+    timerListMachine.test.ts  # Unit tests for timerListMachine (16 tests)
     timerListContext.tsx       # createActorContext wrapper for timerListMachine
+    spacetimedb.ts            # DbConnection factory (createDbConnection)
+    module_bindings/          # Generated TS bindings (spacetime:generate — do not edit)
 spacetimedb/                   # SpacetimeDB server module (spacetime init)
-  spacetimedb/                # TypeScript server module (published to Maincloud)
-  src/module_bindings/        # Generated TS bindings (spacetime:generate — do not edit)
-  spacetime.json              # Module config (server: maincloud)
+  src/
+    index.ts                  # Server module: timer_counter table + 3 reducers
+    module_bindings/          # Generated TS bindings (do not edit)
+  spacetime.json              # Module config (server: maincloud, database: timer-counter-6b3bt)
   .env.local                  # SpacetimeDB host + DB name (not gitignored in spacetimedb/)
+vitest.config.ts              # Vitest config (jsdom, @/* alias)
 static/                       # Static assets served as-is
 .devcontainer/                # Dev container config (see Devcontainer section)
 .github/
@@ -154,10 +160,32 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 ## SpacetimeDB
 
 - Server module: `spacetimedb/` (TypeScript, publishes to `maincloud.spacetimedb.com`)
-- Generated bindings: `spacetimedb/src/module_bindings/` — auto-generated, do not edit manually
+- Database: `timer-counter-6b3bt` on `maincloud`
+- Table: `timer_counter` — `id (u64 autoInc PK)`, `owner (identity)`, `label (string)`, `current_count (i32)`, `remaining_time_seconds (u32)`, `public: true`
+- Reducers: `create_timer_counter({ label })`, `update_timer_counter({ id, label, current_count, remaining_time_seconds })`, `delete_timer_counter({ id })` — all enforce `ctx.sender === row.owner`
+- Generated bindings: `src/lib/module_bindings/` (client app) and `spacetimedb/src/module_bindings/` (server) — do not edit
 - To regenerate bindings after publishing module changes: `cd spacetimedb && npm run spacetime:generate`
 - To publish module: `cd spacetimedb && npm run spacetime:publish`
 - `spacetimedb/dist/` is gitignored (build artifact)
+
+### Sync Architecture
+
+`SyncBridge` (`src/components/SyncBridge.tsx`) is a headless React component rendered inside `TimerListContext.Provider`. It owns the entire STDB connection lifecycle:
+
+**STDB → machine:**
+- `onApplied`: fires once when the subscription is established; sends `STDB_SYNC_APPLIED` with all rows (replaces all local actors and localStorage)
+- `conn.db.timer_counter.onInsert`: after initialization, either links a pending local create (`STDB_ID_LINKED`) or sends `STDB_TIMER_INSERTED` for a remote device insert
+- `conn.db.timer_counter.onDelete`: sends `STDB_TIMER_DELETED`; uses `stdbOriginDeletions` set to avoid re-issuing the delete to STDB
+
+**Machine → STDB (via `actorRef.subscribe`):**
+- New actor IDs without `stdb-` prefix → `createTimerCounter`; actor ID queued in `pendingCreates` (FIFO) for linking
+- Missing actor IDs not in `stdbOriginDeletions` → `deleteTimerCounter` (stdbId looked up from `stdbIdMap`)
+- All actors with a known stdbId → `updateTimerCounter` (handles label + count changes)
+
+**`timerListMachine` STDB context:**
+- `stdbIdMap: Record<string, bigint>` — maps actor ID → STDB row ID
+- Actors spawned from STDB data use IDs like `stdb-${row.id}`; locally-created actors use `${Date.now()}`
+- `STDB_SYNC_APPLIED` replaces the entire timer list (STDB is authoritative)
 
 ---
 
