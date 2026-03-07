@@ -20,7 +20,7 @@ If `HANDOFF.md` does not exist, no handoff is required — proceed normally.
 
 **timer-counter** is a Next.js Progressive Web App (PWA) that provides labelled pomodoro timers with attached counters. It works offline with client-side localStorage persistence. Backend sync (SpacetimeDB) and auth will be added in a future iteration.
 
-- **Frontend**: Next.js v15 (static export) + TypeScript 5 + Tailwind CSS v4 + XState v5
+- **Frontend**: Next.js v16 (static export) + TypeScript 5 + Tailwind CSS v4 + XState v5
 - **Persistence**: `localStorage` (client-only, no backend currently)
 - **Testing**: Vitest
 - **Formatting/Linting**: Prettier + ESLint
@@ -54,7 +54,7 @@ tsconfig.json                 # TypeScript config (Next.js standard)
 
 ## Route File Conventions — Next.js App Router
 
-This project uses Next.js v15 App Router conventions:
+This project uses Next.js v16 App Router conventions:
 
 - Root layout: `src/app/layout.tsx` — server component, sets HTML shell and metadata
 - Home page: `src/app/page.tsx` — client component (`"use client"`), mounts the XState machine via context
