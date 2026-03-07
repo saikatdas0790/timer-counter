@@ -134,7 +134,8 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 - **Authority**: `https://auth.spacetimedb.com/oidc`
 - **Client ID**: `client_032dnbwPlt1yJpQgZmVB3e` — public identifier; stored as plaintext in `ansible/vars/main.yml`, exposed as `NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_ID` via `ansible/templates/env.j2`
 - **Client secret**: not used. SpacetimeAuth registers browser clients as public OIDC clients (`token_endpoint_auth_method: none`). PKCE (`S256`) is the security mechanism for the code exchange — no `client_secret` is sent or needed.
-- **Token storage**: `sessionStorage` (oidc-client-ts default). JS-set cookies are NOT recommended per IETF draft-ietf-oauth-browser-based-apps §8.1 for browser-only SPAs. True HttpOnly cookie security needs a BFF server, which this app does not have.
+- **Token storage**: `sessionStorage` (oidc-client-ts default for `userStore`). JS-set cookies are NOT recommended per IETF draft-ietf-oauth-browser-based-apps §8.1 for browser-only SPAs. True HttpOnly cookie security needs a BFF server, which this app does not have.
+- **State store**: `localStorage` (via `WebStorageStateStore`). The PKCE `code_verifier` and OIDC `state` are stored in `localStorage` so they survive mobile browser in-app redirects, which use an isolated context that does not share `sessionStorage` with the originating tab. Without this, mobile sign-in fails with "No matching state found in storage".
 - **Redirect URI**: `window.location.origin` (root `/`) — no `/callback` route needed. `onSigninCallback` uses `window.history.replaceState` to clean up `?code=&state=` from the URL after exchange.
 - **Silent renew**: `automaticSilentRenew: true` — uses refresh tokens, not iframes.
 - **`OidcProvider`**: `src/components/OidcProvider.tsx` — `"use client"` wrapper around `AuthProvider`. Placed in `src/app/layout.tsx` wrapping `{children}`.

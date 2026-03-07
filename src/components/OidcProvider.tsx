@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthProvider } from "react-oidc-context";
+import { WebStorageStateStore } from "oidc-client-ts";
 
 export default function OidcProvider({
     children,
@@ -10,6 +11,11 @@ export default function OidcProvider({
     const redirectUri =
         typeof window !== "undefined" ? window.location.origin : "";
 
+    const stateStore =
+        typeof window !== "undefined"
+            ? new WebStorageStateStore({ store: window.localStorage })
+            : undefined;
+
     return (
         <AuthProvider
             authority="https://auth.spacetimedb.com/oidc"
@@ -17,6 +23,7 @@ export default function OidcProvider({
             redirect_uri={redirectUri}
             scope="openid profile email"
             automaticSilentRenew={true}
+            stateStore={stateStore}
             onSigninCallback={() => {
                 window.history.replaceState(
                     {},
