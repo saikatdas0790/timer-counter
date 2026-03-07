@@ -1,4 +1,5 @@
 {
   "module-path": ".",
-  "server": "maincloud"
+  "server": "maincloud",
+  "database": "timer-counter-6b3bt"
 }

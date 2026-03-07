@@ -36,6 +36,7 @@
     "@xstate/react": "^6.0.0",
     "oidc-client-ts": "^3.4.1",
     "react-oidc-context": "^3.3.0",
+    "spacetimedb": "^2.0.3",
     "xstate": "^5.28.0"
   }
 }

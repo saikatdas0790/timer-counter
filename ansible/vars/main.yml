@@ -10,6 +10,8 @@ cloudflare_account_id: "21783118d91fac275d5bc116c37da809" # Cloudflare account I
 # SpacetimeDB Configuration
 spacetimedb_token: "{{ vault_spacetimedb_token }}"
 spacetimedb_auth_client_id: "client_032dnbwPlt1yJpQgZmVB3e" # public OIDC client identifier
+spacetimedb_host: "wss://maincloud.spacetimedb.com"
+spacetimedb_db_name: "timer-counter-6b3bt"
 
 # DNS record
 dns_record_name: "timer-counter" # subdomain (timer-counter.saikat.dev)

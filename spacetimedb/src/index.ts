@@ -3,87 +3,61 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { schema, t, table, SenderError } from "spacetimedb/server";
 
-const user = table(
-  { name: "user", public: true },
+const timer_counter = table(
+  { name: "timer_counter", public: true },
   {
-    identity: t.identity().primaryKey(),
-    name: t.string().optional(),
-    online: t.bool(),
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity(),
+    label: t.string(),
+    current_count: t.i32(),
+    remaining_time_seconds: t.u32(),
   },
 );
 
-const message = table(
-  { name: "message", public: true },
-  { sender: t.identity(), sent: t.timestamp(), text: t.string() },
-);
-
-const spacetimedb = schema({ user, message });
+const spacetimedb = schema({ timer_counter });
 export default spacetimedb;
 
-function validateName(name: string) {
-  if (!name) throw new SenderError("Names must not be empty");
-}
-
-export const set_name = spacetimedb.reducer(
-  { name: t.string() },
-  (ctx, { name }) => {
-    validateName(name);
-    const user = ctx.db.user.identity.find(ctx.sender);
-    if (!user) throw new SenderError("Cannot set name for unknown user");
-    console.info(`User ${ctx.sender} sets name to ${name}`);
-    ctx.db.user.identity.update({ ...user, name });
-  },
-);
-
-function validateMessage(text: string) {
-  if (!text) throw new SenderError("Messages must not be empty");
-}
-
-export const send_message = spacetimedb.reducer(
-  { text: t.string() },
-  (ctx, { text }) => {
-    // Things to consider:
-    // - Rate-limit messages per-user.
-    // - Reject messages from unnamed user.
-    validateMessage(text);
-    console.info(`User ${ctx.sender}: ${text}`);
-    ctx.db.message.insert({
-      sender: ctx.sender,
-      text,
-      sent: ctx.timestamp,
+export const create_timer_counter = spacetimedb.reducer(
+  { label: t.string() },
+  (ctx, { label }) => {
+    ctx.db.timer_counter.insert({
+      id: 0n,
+      owner: ctx.sender,
+      label,
+      current_count: 0,
+      remaining_time_seconds: 0,
     });
   },
 );
 
-// Called when the module is initially published
-export const init = spacetimedb.init((_ctx) => {});
-
-export const onConnect = spacetimedb.clientConnected((ctx) => {
-  const user = ctx.db.user.identity.find(ctx.sender);
-  if (user) {
-    // If this is a returning user, i.e. we already have a `User` with this `Identity`,
-    // set `online: true`, but leave `name` and `identity` unchanged.
-    ctx.db.user.identity.update({ ...user, online: true });
-  } else {
-    // If this is a new user, create a `User` row for the `Identity`,
-    // which is online, but hasn't set a name.
-    ctx.db.user.insert({
-      name: undefined,
-      identity: ctx.sender,
-      online: true,
+export const update_timer_counter = spacetimedb.reducer(
+  {
+    id: t.u64(),
+    label: t.string(),
+    current_count: t.i32(),
+    remaining_time_seconds: t.u32(),
+  },
+  (ctx, { id, label, current_count, remaining_time_seconds }) => {
+    const timer = ctx.db.timer_counter.id.find(id);
+    if (!timer) throw new SenderError("Timer not found");
+    if (!timer.owner.isEqual(ctx.sender))
+      throw new SenderError("Not authorized");
+    ctx.db.timer_counter.id.update({
+      ...timer,
+      label,
+      current_count,
+      remaining_time_seconds,
     });
-  }
-});
+  },
+);
 
-export const onDisconnect = spacetimedb.clientDisconnected((ctx) => {
-  const user = ctx.db.user.identity.find(ctx.sender);
-  if (user) {
-    ctx.db.user.identity.update({ ...user, online: false });
-  } else {
-    // This branch should be unreachable,
-    // as it doesn't make sense for a client to disconnect without connecting first.
-    console.warn(
-      `Disconnect event for unknown user with identity ${ctx.sender}`,
-    );
-  }
-});
+export const delete_timer_counter = spacetimedb.reducer(
+  { id: t.u64() },
+  (ctx, { id }) => {
+    const timer = ctx.db.timer_counter.id.find(id);
+    if (!timer) throw new SenderError("Timer not found");
+    if (!timer.owner.isEqual(ctx.sender))
+      throw new SenderError("Not authorized");
+    ctx.db.timer_counter.id.delete(id);
+  },
+);

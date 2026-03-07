@@ -1,3 +1,0 @@
-- Use SpacetimeDB's authentication system instead of Internet Identity.
-- I want to use SpacetimeDB as the backend instead of a custom Motoko canister. This means we will need to refactor the data fetching and state management logic to work with SpacetimeDB's API instead of the current canister interface.
-- dependabot - same as https://github.com/saikatdas0790/my-website/
