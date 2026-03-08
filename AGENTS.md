@@ -40,12 +40,20 @@ src/
   components/                 # UI — follows atomic design (see below)
     OidcProvider.tsx          # react-oidc-context AuthProvider wrapper ("use client")
     SyncBridge.tsx            # Headless component: bridges timerListMachine ↔ SpacetimeDB
+    ServiceWorkerRegistration.tsx  # "use client" headless component that registers the SW on mount
   lib/
     timerListMachine.ts       # Root XState machine (timer list + localStorage + STDB events)
-    timerListMachine.test.ts  # Unit tests for timerListMachine (16 tests)
+    timerListMachine.test.ts  # Unit tests for timerListMachine (43 tests)
     timerListContext.tsx       # createActorContext wrapper for timerListMachine
     spacetimedb.ts            # DbConnection factory (createDbConnection)
+    registerServiceWorker.ts  # Service worker registration (called from ServiceWorkerRegistration)
+    useWakeLock.ts            # Hook: requests screen wake lock while a timer is running
+    useWakeLock.test.ts       # Unit tests for useWakeLock (8 tests)
+    pwa.test.ts               # Unit tests for manifest + SW registration (14 tests)
     module_bindings/          # Generated TS bindings (spacetime:generate — do not edit)
+public/                        # Served at site root (Next.js static assets)
+  manifest.json               # PWA web app manifest
+  sw.js                       # Service worker (cache-first for static, network-first for nav)
 spacetimedb/                   # SpacetimeDB server module (spacetime init)
   src/
     index.ts                  # Server module: timer_counter table + 3 reducers
@@ -132,6 +140,17 @@ All non-trivial state lives in XState v5 machines. Conventions:
 
 ---
 
+## PWA — Service Worker + Wake Lock
+
+- **Manifest**: `public/manifest.json` — `display: standalone`, icons at `/static/pwa-192x192.png` and `/static/pwa-512x512.png`, `theme_color: "#1e293b"`, `start_url: "/"`
+- **Service worker**: `public/sw.js` — cache-first for `/_next/static/`, network-first for navigation, stale-while-revalidate for everything else; `skipWaiting()` + `clients.claim()`
+- **Registration**: `src/lib/registerServiceWorker.ts` — guards `if (!navigator.serviceWorker) return;` (falsy check, not `"serviceWorker" in navigator`, to handle browsers where the property exists but is `undefined`); registers `sw.js` with `scope: "/"`
+- **`ServiceWorkerRegistration`**: `src/components/ServiceWorkerRegistration.tsx` — `"use client"` headless component, calls `registerServiceWorker()` in `useEffect`. Rendered in `src/app/layout.tsx`.
+- **Wake Lock**: `src/lib/useWakeLock.ts` — `useWakeLock(active: boolean)` hook. When `active` is true, requests `navigator.wakeLock.request("screen")` to keep the screen on while the timer is running. Re-acquires on `visibilitychange` when the page becomes visible again (wake lock is automatically released when the tab is hidden). Guards with `if (!navigator.wakeLock) return;`. Called in `TimerCounterComponent` as `useWakeLock(snapshot.matches("running"))`.
+- Wake lock and wall-clock accuracy are complementary: wake lock keeps the screen on for the user; wall-clock deltas keep the timer accurate regardless of tab throttling.
+
+---
+
 ## Authentication — SpacetimeAuth + react-oidc-context
 
 Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google as the identity provider.
@@ -198,6 +217,14 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 - `STDB_SYNC_APPLIED` replaces the entire timer list (STDB is authoritative)
 - `STDB_TIMER_UPDATED` dispatches `TIMER_STATE_SYNCED_FROM_REMOTE` to the child actor; `syncFromRemote` updates context but does NOT write to localStorage (keeps the echo loop broken)
 
+**Background-tab flush (`forceFlushRunningTimers`):**
+
+Browsers throttle background tabs and can suppress `actorRef.subscribe` for up to 60 seconds, so timer state may not reach STDB while the tab is hidden. `SyncBridge` registers a `visibilitychange` listener: every time the tab transitions to `visibilityState === "hidden"`, `forceFlushRunningTimers()` is called. It iterates all actors whose XState value is `"running"`, calls `updateTimerCounter` immediately (bypassing the subscribe cycle), and pre-populates `lastUploadedValues` so the echo suppression in `onUpdate` still correctly discards the resulting echo. The listener is removed in the `useEffect` cleanup alongside `machSub.unsubscribe()` and `conn.disconnect()`.
+
+**TimerWorker wall-clock approach:**
+
+`TimerWorker.ts` uses `Date.now()` deltas instead of counting `setInterval` ticks. On each interval it posts `{ type: "SECONDS_ELAPSED", seconds: N }` where `N = Math.max(1, Math.round((now - lastTickAt) / 1000))`. After a 30-second throttle/suspension the first wakeup tick carries `seconds: 30` and the machine catches up immediately. `timerCounterMachine` handles `SECONDS_ELAPSED` and subtracts `event.seconds`, clamped to `Math.max(0, ...)` so remainingTime never goes negative.
+
 ---
 
 ## Scripts Reference
@@ -260,6 +287,8 @@ ansible-playbook ansible/manage_dns.yml
 ## Dependency Notes
 
 All packages in the dependency tree are compatible with the current npm version — no `legacy-peer-deps` workaround is needed.
+
+`@testing-library/react` and `@testing-library/dom` are devDependencies used in `useWakeLock.test.ts` for `renderHook` and `act`. Import from `@testing-library/react` only.
 
 Tailwind CSS v4 uses the `@tailwindcss/postcss` PostCSS plugin. The only Tailwind entry point is `@import "tailwindcss"` in `src/app/globals.css`. All customisation goes through CSS custom properties (Tailwind v4 CSS-based config). There is no `tailwind.config.js`.
 
