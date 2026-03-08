@@ -26,7 +26,11 @@ export function SyncBridge() {
     const pendingCreates: string[] = [];
     // Actor IDs whose last change came FROM STDB (skip re-uploading to STDB)
     const stdbOriginDeletions = new Set<string>();
-    const stdbOriginUpdates = new Set<string>();
+    // Counts of in-flight updateTimerCounter calls per actor ID.
+    // Each call increments the counter; when the STDB echo arrives in onUpdate
+    // the counter is decremented and the echo is dropped before it reaches the
+    // machine — preventing stale label/state values from overwriting local state.
+    const pendingUpdates = new Map<string, number>();
     // True after the first subscription.onApplied fires
     let initialized = false;
     let synced = false;
@@ -61,13 +65,20 @@ export function SyncBridge() {
 
     conn.db.timer_counter.onUpdate((_, _oldRow, newRow) => {
       if (!initialized) return;
-      // Mark this actor so the actorRef.subscribe callback skips the
-      // updateTimerCounter call that would otherwise echo it back to STDB.
       const snapshot = actorRef.getSnapshot();
       const actorId = Object.entries(snapshot.context.stdbIdMap).find(
         ([, id]) => id === newRow.id,
       )?.[0];
-      if (actorId) stdbOriginUpdates.add(actorId);
+      // If this is an echo of our own updateTimerCounter call, consume one
+      // pending slot and drop the event — don't let stale values overwrite
+      // the local machine state (especially the label while the user is typing).
+      if (actorId) {
+        const n = pendingUpdates.get(actorId) ?? 0;
+        if (n > 0) {
+          pendingUpdates.set(actorId, n - 1);
+          return;
+        }
+      }
       actorRef.send({
         type: "STDB_TIMER_UPDATED",
         row: {
@@ -148,19 +159,19 @@ export function SyncBridge() {
       }
 
       // Sync current state for all linked timers (handles label, count, time
-      // changes). Skip timers whose update originated from STDB to avoid
-      // echoing the same values back.
+      // changes). Track each call in pendingUpdates so that the STDB echo
+      // is dropped in onUpdate rather than reaching the machine.
       for (const timerRef of currentTimers) {
         const stdbId = snapshot.context.stdbIdMap[timerRef.id];
         if (stdbId !== undefined) {
-          if (stdbOriginUpdates.has(timerRef.id)) {
-            stdbOriginUpdates.delete(timerRef.id);
-            continue;
-          }
           const ctx = timerRef.getSnapshot()?.context;
           const timerState =
             (timerRef.getSnapshot()?.value as string | undefined) ?? "new";
           if (ctx) {
+            pendingUpdates.set(
+              timerRef.id,
+              (pendingUpdates.get(timerRef.id) ?? 0) + 1,
+            );
             conn.reducers
               .updateTimerCounter({
                 id: stdbId,
@@ -169,7 +180,14 @@ export function SyncBridge() {
                 remainingTimeSeconds: ctx.remainingTimeInSeconds,
                 timerState,
               })
-              .catch(() => {});
+              .catch(() => {
+                // Roll back the pending count if the call failed so we don't
+                // accidentally suppress a future remote update.
+                pendingUpdates.set(
+                  timerRef.id,
+                  Math.max(0, (pendingUpdates.get(timerRef.id) ?? 1) - 1),
+                );
+              });
           }
         }
       }

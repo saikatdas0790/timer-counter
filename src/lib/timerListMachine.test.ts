@@ -105,6 +105,26 @@ describe("timerListMachine", () => {
     actor.stop();
   });
 
+  it("TIMER_COUNTER_LABEL_CHANGED persists new label to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    actor.send({ type: "TIMER_COUNTER_STATE_CHANGED" }); // initial save
+
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({
+      type: "TIMER_COUNTER_LABEL_CHANGED",
+      updatedLabel: "Deep Work",
+    });
+
+    const stored = JSON.parse(
+      localStorage.getItem("timerCounterSavedState") ?? "[]",
+    ) as Array<{ timerLabel: string }>;
+    expect(stored[0].timerLabel).toBe("Deep Work");
+    // child context should also reflect the change
+    expect(timerRef.getSnapshot().context.timerLabel).toBe("Deep Work");
+    actor.stop();
+  });
+
   // ── STDB_ID_LINKED ────────────────────────────────────────────────────────
 
   it("links a stdb id to a local actor", async () => {
