@@ -46,7 +46,7 @@ export default function TimerCounter({ timer }: Props) {
       <Divider />
       <TimerLabel
         textToDisplay={snapshot.context.timerLabel}
-        onInput={(value) =>
+        onCommit={(value) =>
           timer.send({
             type: "TIMER_COUNTER_LABEL_CHANGED",
             updatedLabel: value,

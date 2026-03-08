@@ -105,7 +105,7 @@ describe("timerListMachine", () => {
     actor.stop();
   });
 
-  it("TIMER_COUNTER_LABEL_CHANGED persists new label to localStorage", async () => {
+  it("TIMER_COUNTER_LABEL_CHANGED (fired on blur) persists new label to localStorage", async () => {
     const actor = await startReadyMachine();
     actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
     actor.send({ type: "TIMER_COUNTER_STATE_CHANGED" }); // initial save
