@@ -118,7 +118,7 @@ const timerCounterMachine = setup({
     new: {
       on: {
         TIMER_INTERVAL_SET: {
-          actions: "setTimerCountdown",
+          actions: ["setTimerCountdown", "syncTimerState"],
           target: "timerSet",
         },
       },
@@ -126,7 +126,7 @@ const timerCounterMachine = setup({
     timerSet: {
       on: {
         TIMER_INTERVAL_SET: {
-          actions: "setTimerCountdown",
+          actions: ["setTimerCountdown", "syncTimerState"],
           target: "timerSet",
         },
         COUNTDOWN_TIMER_PLAY_PAUSED: {
@@ -134,7 +134,7 @@ const timerCounterMachine = setup({
         },
         COUNTDOWN_TIMER_RESET: {
           target: "new",
-          actions: "resetTimerCountdown",
+          actions: ["resetTimerCountdown", "syncTimerState"],
         },
       },
     },
@@ -142,9 +142,10 @@ const timerCounterMachine = setup({
       on: {
         COUNTDOWN_TIMER_PLAY_PAUSED: {
           target: "paused",
+          actions: "syncTimerState",
         },
         ONE_SECOND_ELAPSED: {
-          actions: "decrementTimerCountdown",
+          actions: ["decrementTimerCountdown", "syncTimerState"],
           target: "running",
         },
       },
@@ -160,7 +161,7 @@ const timerCounterMachine = setup({
         },
         COUNTDOWN_TIMER_RESET: {
           target: "new",
-          actions: "resetTimerCountdown",
+          actions: ["resetTimerCountdown", "syncTimerState"],
         },
       },
     },
@@ -168,7 +169,7 @@ const timerCounterMachine = setup({
       on: {
         COUNTDOWN_TIMER_RESET: {
           target: "new",
-          actions: "resetTimerCountdown",
+          actions: ["resetTimerCountdown", "syncTimerState"],
         },
       },
       entry: ["incrementTimerCounter", "playEndSound"],

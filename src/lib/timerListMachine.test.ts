@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { createActor, waitFor } from "xstate";
 import { timerListMachine } from "./timerListMachine";
+import { timerIntervals } from "@/components/molecule/timer/timer-counter/TimerCounter";
 
 async function startReadyMachine(savedTimers: unknown[] = []) {
   localStorage.setItem("timerCounterSavedState", JSON.stringify(savedTimers));
@@ -257,6 +258,116 @@ describe("timerListMachine", () => {
     actor.send({ type: "STDB_TIMER_DELETED", stdbId: 10n });
     expect(actor.getSnapshot().context.timers).toHaveLength(0);
     expect(actor.getSnapshot().context.stdbIdMap[actorId]).toBeUndefined();
+    actor.stop();
+  });
+
+  // ── Time remaining sync ───────────────────────────────────────────────────
+  // Each of these verifies that a time-changing event on a child timer causes
+  // the parent to persist updated remainingTimeInSeconds to localStorage,
+  // which is also what triggers SyncBridge to call updateTimerCounter on STDB.
+
+  function getStoredTimers() {
+    return JSON.parse(
+      localStorage.getItem("timerCounterSavedState") ?? "[]",
+    ) as Array<{ id: string; remainingTimeInSeconds: number }>;
+  }
+
+  it("TIMER_INTERVAL_SET syncs remaining time to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    actor.send({ type: "TIMER_COUNTER_STATE_CHANGED" }); // initial save
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(0);
+
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({
+      type: "TIMER_INTERVAL_SET",
+      intervalValue: timerIntervals[0],
+    }); // 15 min = 900s
+
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(900);
+    actor.stop();
+  });
+
+  it("ONE_SECOND_ELAPSED syncs remaining time to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({
+      type: "TIMER_INTERVAL_SET",
+      intervalValue: timerIntervals[0],
+    }); // 900s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // start running
+    timerRef.send({ type: "ONE_SECOND_ELAPSED" }); // tick once → 899s
+
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(899);
+    actor.stop();
+  });
+
+  it("COUNTDOWN_TIMER_RESET syncs remaining time (0) to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({
+      type: "TIMER_INTERVAL_SET",
+      intervalValue: timerIntervals[0],
+    }); // 900s
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(900);
+
+    timerRef.send({ type: "COUNTDOWN_TIMER_RESET" }); // → 0s
+
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(0);
+    actor.stop();
+  });
+
+  it("COUNTDOWN_TIMER_PLAY_PAUSED (running→paused) syncs remaining time to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({
+      type: "TIMER_INTERVAL_SET",
+      intervalValue: timerIntervals[1],
+    }); // 30 min = 1800s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // start
+    timerRef.send({ type: "ONE_SECOND_ELAPSED" }); // 1799s
+    timerRef.send({ type: "ONE_SECOND_ELAPSED" }); // 1798s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // pause — should snapshot 1798s
+
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(1798);
+    actor.stop();
+  });
+
+  it("TIMER_INTERVAL_SET syncs updated time when interval is changed mid-session", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({
+      type: "TIMER_INTERVAL_SET",
+      intervalValue: timerIntervals[0],
+    }); // 900s
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(900);
+
+    timerRef.send({
+      type: "TIMER_INTERVAL_SET",
+      intervalValue: timerIntervals[2],
+    }); // 1H = 3600s
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(3600);
+    actor.stop();
+  });
+
+  it("COUNTDOWN_TIMER_RESET from paused state syncs 0 to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({
+      type: "TIMER_INTERVAL_SET",
+      intervalValue: timerIntervals[0],
+    }); // 900s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // running
+    timerRef.send({ type: "ONE_SECOND_ELAPSED" }); // 899s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // paused at 899s
+    timerRef.send({ type: "COUNTDOWN_TIMER_RESET" }); // → 0s
+
+    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(0);
     actor.stop();
   });
 });

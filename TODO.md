@@ -1,4 +1,4 @@
-- Deleting timers doesn't seem to be working. Fix this and write tests for it.
-- Websockets not syncing the time. Fix this and write tests for it.
-- PWA install not appearing. Fix this and write tests for it.
+- Websockets not syncing the time remaining. Fix this and write tests for it.
+- PWA install option not appearing. Is the service worker bit working and registering itself correctly? Fix this and write tests for it.
 - When timer running, request user for permission to keep the tab awake. If permission granted, use the Wake Lock API to keep the tab awake while the timer is running
+- When site opens, it always lands on Log in with Google. Should check if user is already authenticated and if so, skip the login page and go straight to the timer list. Also, what is the default logged in time before the session expires? Should we implement silent refresh of the session to keep the user logged in?
