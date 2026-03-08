@@ -170,25 +170,33 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 
 ### Sync Architecture
 
+**Sync preference**: ALL timer state — `label`, `currentCount`, `remainingTimeInSeconds`, and `timerState` — is always synced bidirectionally. Any change on any device (label edit, counter increment, timer start/pause/reset) propagates to every other connected device. When designing new features, default to syncing all state rather than leaving anything device-local.
+
 `SyncBridge` (`src/components/SyncBridge.tsx`) is a headless React component rendered inside `TimerListContext.Provider`. It owns the entire STDB connection lifecycle:
 
 **STDB → machine:**
 
-- `onApplied`: fires once when the subscription is established; sends `STDB_SYNC_APPLIED` with all rows (replaces all local actors and localStorage)
-- `conn.db.timer_counter.onInsert`: after initialization, either links a pending local create (`STDB_ID_LINKED`) or sends `STDB_TIMER_INSERTED` for a remote device insert
+- `onApplied`: fires once when the subscription is established; pre-populates `lastUploadedValues` for all rows, then sends `STDB_SYNC_APPLIED` with all rows (replaces all local actors and localStorage)
+- `conn.db.timer_counter.onInsert`: after initialization, either links a pending local create (`STDB_ID_LINKED`) or sends `STDB_TIMER_INSERTED` for a remote device insert; pre-populates `lastUploadedValues` in both cases
+- `conn.db.timer_counter.onUpdate`: value-comparison echo detection — if all fields match `lastUploadedValues` it is our own echo and is discarded; otherwise `lastUploadedValues` is updated with the incoming values before dispatching `STDB_TIMER_UPDATED` to the machine
 - `conn.db.timer_counter.onDelete`: sends `STDB_TIMER_DELETED`; uses `stdbOriginDeletions` set to avoid re-issuing the delete to STDB
 
 **Machine → STDB (via `actorRef.subscribe`):**
 
 - New actor IDs without `stdb-` prefix → `createTimerCounter`; actor ID queued in `pendingCreates` (FIFO) for linking
 - Missing actor IDs not in `stdbOriginDeletions` → `deleteTimerCounter` (stdbId looked up from `stdbIdMap`)
-- All actors with a known stdbId → `updateTimerCounter` (handles label + count changes)
+- All actors with a known stdbId → `updateTimerCounter` **only when current values differ from `lastUploadedValues`** — this prevents re-uploading STDB-originated data after every machine transition
+
+**Echo-loop prevention (`lastUploadedValues` pattern):**
+
+`actorRef.subscribe` fires on every machine transition, including STDB-originated ones (`STDB_TIMER_UPDATED`, `STDB_SYNC_APPLIED`). Without guards this causes every STDB event to trigger an upload for all timers. `lastUploadedValues: Map<string, UploadedValues>` records the last values uploaded to or received from STDB per actor. The subscribe callback skips `updateTimerCounter` when the current actor snapshot matches the map. `onUpdate` uses the same map to detect echoes of our own writes. This prevents the failure mode where `pendingUpdates` on Device B grows from STDB-event transitions and silences genuine remote updates.
 
 **`timerListMachine` STDB context:**
 
 - `stdbIdMap: Record<string, bigint>` — maps actor ID → STDB row ID
 - Actors spawned from STDB data use IDs like `stdb-${row.id}`; locally-created actors use `${Date.now()}`
 - `STDB_SYNC_APPLIED` replaces the entire timer list (STDB is authoritative)
+- `STDB_TIMER_UPDATED` dispatches `TIMER_STATE_SYNCED_FROM_REMOTE` to the child actor; `syncFromRemote` updates context but does NOT write to localStorage (keeps the echo loop broken)
 
 ---
 

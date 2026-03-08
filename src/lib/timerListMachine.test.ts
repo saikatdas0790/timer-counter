@@ -748,4 +748,142 @@ describe("timerListMachine", () => {
     ).toBe(751);
     actor.stop();
   });
+
+  // ── Remote update propagation — echo-loop prevention ─────────────────────
+  // Documents the key invariant that SyncBridge's lastUploadedValues map
+  // must enforce: STDB-originated events (STDB_TIMER_UPDATED,
+  // STDB_SYNC_APPLIED) must NOT write to localStorage. If they did,
+  // actorRef.subscribe would fire → uploadAll → grow pendingUpdates → silence
+  // the next genuine remote update. These tests verify the machine layer
+  // honours this requirement by using syncFromRemote (no localStorage write).
+
+  it("two sequential STDB_TIMER_UPDATED events both reach the child actor", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 40n,
+          label: "Original",
+          currentCount: 0,
+          remainingTimeSeconds: 0,
+        },
+      ],
+    });
+
+    // First remote update: label changed on Device A
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 40n,
+        label: "First Update",
+        currentCount: 0,
+        remainingTimeSeconds: 0,
+      },
+    });
+    expect(
+      actor.getSnapshot().context.timers[0].getSnapshot().context.timerLabel,
+    ).toBe("First Update");
+
+    // Second remote update: count changed on Device A
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 40n,
+        label: "First Update",
+        currentCount: 3,
+        remainingTimeSeconds: 0,
+      },
+    });
+    const ctx = actor.getSnapshot().context.timers[0].getSnapshot().context;
+    expect(ctx.timerLabel).toBe("First Update");
+    expect(ctx.currentCount).toBe(3);
+    actor.stop();
+  });
+
+  it("two sequential STDB_TIMER_UPDATED events do NOT write to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 41n,
+          label: "Original",
+          currentCount: 0,
+          remainingTimeSeconds: 0,
+        },
+      ],
+    });
+
+    // Capture localStorage right after initial sync
+    const storedAfterSync = localStorage.getItem("timerCounterSavedState");
+
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 41n,
+        label: "Update 1",
+        currentCount: 2,
+        remainingTimeSeconds: 0,
+      },
+    });
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 41n,
+        label: "Update 2",
+        currentCount: 5,
+        remainingTimeSeconds: 0,
+      },
+    });
+
+    // Neither remote update must have written to localStorage —
+    // writing would retrigger SyncBridge's actorRef.subscribe and produce
+    // STDB echoes that could silence subsequent genuine remote updates.
+    expect(localStorage.getItem("timerCounterSavedState")).toBe(
+      storedAfterSync,
+    );
+    actor.stop();
+  });
+
+  it("STDB_TIMER_UPDATED with timerState transitions child state without writing localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 42n,
+          label: "StateTest",
+          currentCount: 0,
+          remainingTimeSeconds: 900,
+          timerState: "timerSet",
+        },
+      ],
+    });
+
+    const storedAfterSync = localStorage.getItem("timerCounterSavedState");
+
+    // Device A started the timer
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 42n,
+        label: "StateTest",
+        currentCount: 0,
+        remainingTimeSeconds: 891,
+        timerState: "running",
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    // Child must now be in the running state …
+    expect(
+      actor.getSnapshot().context.timers[0].getSnapshot().matches("running"),
+    ).toBe(true);
+    // … but localStorage must not change (no echo to STDB)
+    expect(localStorage.getItem("timerCounterSavedState")).toBe(
+      storedAfterSync,
+    );
+    actor.stop();
+  });
 });

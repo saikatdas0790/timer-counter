@@ -11,6 +11,11 @@ import { TimerListContext } from "@/lib/timerListContext";
  *
  * STDB → machine: sends STDB_SYNC_APPLIED / STDB_TIMER_INSERTED / STDB_TIMER_DELETED / STDB_ID_LINKED
  * Machine → STDB: watches state changes, calls createTimerCounter / updateTimerCounter / deleteTimerCounter
+ *
+ * Sync preference: ALL timer state (label, count, remainingTime, timerState) is always synced to STDB
+ * so that any device can resume from where another left off. Echo suppression is done via
+ * lastUploadedValues — we only upload a timer when its local values differ from the last
+ * values we sent to (or received from) STDB, preventing infinite re-upload loops.
  */
 export function SyncBridge() {
   const auth = useAuth();
@@ -24,13 +29,19 @@ export function SyncBridge() {
 
     // FIFO queue of local actorIds whose STDB create is in-flight
     const pendingCreates: string[] = [];
-    // Actor IDs whose last change came FROM STDB (skip re-uploading to STDB)
+    // Actor IDs deleted by this device (skip re-issuing delete to STDB)
     const stdbOriginDeletions = new Set<string>();
-    // Counts of in-flight updateTimerCounter calls per actor ID.
-    // Each call increments the counter; when the STDB echo arrives in onUpdate
-    // the counter is decremented and the echo is dropped before it reaches the
-    // machine — preventing stale label/state values from overwriting local state.
-    const pendingUpdates = new Map<string, number>();
+    // Last values uploaded to (or confirmed from) STDB per actor ID.
+    // actorRef.subscribe only calls updateTimerCounter when current values
+    // differ from this snapshot — prevents re-uploading STDB-originated data
+    // and stops the echo loop that silences genuine remote updates.
+    type UploadedValues = {
+      label: string;
+      currentCount: number;
+      remainingTimeInSeconds: number;
+      timerState: string;
+    };
+    const lastUploadedValues = new Map<string, UploadedValues>();
     // True after the first subscription.onApplied fires
     let initialized = false;
     let synced = false;
@@ -42,14 +53,28 @@ export function SyncBridge() {
       if (!initialized) return; // initial subscription rows are handled via onApplied
       const pendingActorId = pendingCreates.shift();
       if (pendingActorId !== undefined) {
-        // Confirmation of our own local create — link STDB id to local actor id
+        // Confirmation of our own local create — link STDB id to local actor id.
+        // Pre-populate lastUploadedValues so subscribe doesn't re-upload it.
+        lastUploadedValues.set(pendingActorId, {
+          label: row.label,
+          currentCount: row.currentCount,
+          remainingTimeInSeconds: row.remainingTimeSeconds,
+          timerState: row.timerState,
+        });
         actorRef.send({
           type: "STDB_ID_LINKED",
           actorId: pendingActorId,
           stdbId: row.id,
         });
       } else {
-        // Remote insert from another device
+        // Remote insert from another device.
+        // Pre-populate lastUploadedValues so subscribe doesn't re-upload it.
+        lastUploadedValues.set(`stdb-${row.id}`, {
+          label: row.label,
+          currentCount: row.currentCount,
+          remainingTimeInSeconds: row.remainingTimeSeconds,
+          timerState: row.timerState,
+        });
         actorRef.send({
           type: "STDB_TIMER_INSERTED",
           row: {
@@ -69,15 +94,30 @@ export function SyncBridge() {
       const actorId = Object.entries(snapshot.context.stdbIdMap).find(
         ([, id]) => id === newRow.id,
       )?.[0];
-      // If this is an echo of our own updateTimerCounter call, consume one
-      // pending slot and drop the event — don't let stale values overwrite
-      // the local machine state (especially the label while the user is typing).
+      // Update lastUploadedValues with the STDB-confirmed values so that
+      // actorRef.subscribe won't re-upload them after dispatching to the machine.
+      const incomingValues: UploadedValues = {
+        label: newRow.label,
+        currentCount: newRow.currentCount,
+        remainingTimeInSeconds: newRow.remainingTimeSeconds,
+        timerState: newRow.timerState,
+      };
       if (actorId) {
-        const n = pendingUpdates.get(actorId) ?? 0;
-        if (n > 0) {
-          pendingUpdates.set(actorId, n - 1);
+        const last = lastUploadedValues.get(actorId);
+        // If every field matches what we last uploaded, this is our own echo.
+        // Update lastUploadedValues (the STDB-confirmed snapshot) and skip
+        // dispatching to the machine to avoid unnecessary transitions.
+        if (
+          last &&
+          last.label === incomingValues.label &&
+          last.currentCount === incomingValues.currentCount &&
+          last.remainingTimeInSeconds ===
+            incomingValues.remainingTimeInSeconds &&
+          last.timerState === incomingValues.timerState
+        ) {
           return;
         }
+        lastUploadedValues.set(actorId, incomingValues);
       }
       actorRef.send({
         type: "STDB_TIMER_UPDATED",
@@ -107,6 +147,17 @@ export function SyncBridge() {
         // Set prevTimerIds to the incoming STDB actor IDs before sending the
         // event so that the actorRef.subscribe handler sees no diff.
         prevTimerIds = new Set(rows.map((r) => `stdb-${r.id}`));
+        // Pre-populate lastUploadedValues with STDB data so that the
+        // actorRef.subscribe callback doesn't re-upload them after the machine
+        // processes STDB_SYNC_APPLIED and transitions.
+        for (const r of rows) {
+          lastUploadedValues.set(`stdb-${r.id}`, {
+            label: r.label,
+            currentCount: r.currentCount,
+            remainingTimeInSeconds: r.remainingTimeSeconds,
+            timerState: r.timerState,
+          });
+        }
         initialized = true;
         synced = true;
         actorRef.send({
@@ -158,9 +209,12 @@ export function SyncBridge() {
         stdbOriginDeletions.delete(id);
       }
 
-      // Sync current state for all linked timers (handles label, count, time
-      // changes). Track each call in pendingUpdates so that the STDB echo
-      // is dropped in onUpdate rather than reaching the machine.
+      // Upload state for all linked timers, but ONLY when current values
+      // differ from what was last uploaded/received. This prevents:
+      // 1. Re-uploading STDB-originated data after STDB_TIMER_UPDATED /
+      //    STDB_SYNC_APPLIED triggers actorRef.subscribe.
+      // 2. The pendingUpdates counter growing unboundedly from STDB-event
+      //    transitions, which used to silence genuine remote updates.
       for (const timerRef of currentTimers) {
         const stdbId = snapshot.context.stdbIdMap[timerRef.id];
         if (stdbId !== undefined) {
@@ -168,10 +222,25 @@ export function SyncBridge() {
           const timerState =
             (timerRef.getSnapshot()?.value as string | undefined) ?? "new";
           if (ctx) {
-            pendingUpdates.set(
-              timerRef.id,
-              (pendingUpdates.get(timerRef.id) ?? 0) + 1,
-            );
+            const last = lastUploadedValues.get(timerRef.id);
+            // Skip if nothing changed since last upload
+            if (
+              last &&
+              last.label === ctx.timerLabel &&
+              last.currentCount === ctx.currentCount &&
+              last.remainingTimeInSeconds === ctx.remainingTimeInSeconds &&
+              last.timerState === timerState
+            ) {
+              continue;
+            }
+            // Record what we're about to upload BEFORE calling the reducer so
+            // that the STDB echo arriving in onUpdate matches and is suppressed.
+            lastUploadedValues.set(timerRef.id, {
+              label: ctx.timerLabel,
+              currentCount: ctx.currentCount,
+              remainingTimeInSeconds: ctx.remainingTimeInSeconds,
+              timerState,
+            });
             conn.reducers
               .updateTimerCounter({
                 id: stdbId,
@@ -181,12 +250,8 @@ export function SyncBridge() {
                 timerState,
               })
               .catch(() => {
-                // Roll back the pending count if the call failed so we don't
-                // accidentally suppress a future remote update.
-                pendingUpdates.set(
-                  timerRef.id,
-                  Math.max(0, (pendingUpdates.get(timerRef.id) ?? 1) - 1),
-                );
+                // On failure clear the entry so the next subscribe call retries.
+                lastUploadedValues.delete(timerRef.id);
               });
           }
         }
