@@ -15,4 +15,5 @@ export default {
   label: __t.string(),
   currentCount: __t.i32(),
   remainingTimeSeconds: __t.u32(),
+  timerState: __t.string(),
 };

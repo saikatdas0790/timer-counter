@@ -11,6 +11,7 @@ const timer_counter = table(
     label: t.string(),
     current_count: t.i32(),
     remaining_time_seconds: t.u32(),
+    timer_state: t.string(),
   },
 );
 
@@ -26,6 +27,7 @@ export const create_timer_counter = spacetimedb.reducer(
       label,
       current_count: 0,
       remaining_time_seconds: 0,
+      timer_state: "new",
     });
   },
 );
@@ -36,8 +38,9 @@ export const update_timer_counter = spacetimedb.reducer(
     label: t.string(),
     current_count: t.i32(),
     remaining_time_seconds: t.u32(),
+    timer_state: t.string(),
   },
-  (ctx, { id, label, current_count, remaining_time_seconds }) => {
+  (ctx, { id, label, current_count, remaining_time_seconds, timer_state }) => {
     const timer = ctx.db.timer_counter.id.find(id);
     if (!timer) throw new SenderError("Timer not found");
     if (!timer.owner.isEqual(ctx.sender))
@@ -47,6 +50,7 @@ export const update_timer_counter = spacetimedb.reducer(
       label,
       current_count,
       remaining_time_seconds,
+      timer_state,
     });
   },
 );

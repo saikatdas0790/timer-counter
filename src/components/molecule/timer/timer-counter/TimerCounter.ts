@@ -46,6 +46,7 @@ const timerCounterMachine = setup({
           timerLabel: string;
           currentCount: number;
           remainingTimeInSeconds: number;
+          timerState: string;
         },
     input: {} as {
       remainingTimeInSeconds?: number;
@@ -119,9 +120,30 @@ const timerCounterMachine = setup({
     currentCount: input?.currentCount ?? 0,
   }),
   on: {
-    TIMER_STATE_SYNCED_FROM_REMOTE: {
-      actions: "syncFromRemote",
-    },
+    TIMER_STATE_SYNCED_FROM_REMOTE: [
+      {
+        guard: ({ event }) => event.timerState === "running",
+        target: ".running",
+        actions: "syncFromRemote",
+      },
+      {
+        guard: ({ event }) => event.timerState === "paused",
+        target: ".paused",
+        actions: "syncFromRemote",
+      },
+      {
+        guard: ({ event }) => event.timerState === "timerSet",
+        target: ".timerSet",
+        actions: "syncFromRemote",
+      },
+      {
+        guard: ({ event }) => event.timerState === "finished",
+        target: ".finished",
+        actions: "syncFromRemote",
+      },
+      // default: "new" (covers "new" and any unknown value)
+      { target: ".new", actions: "syncFromRemote" },
+    ],
     TIMER_COUNTER_DECREMENTED: {
       actions: ["decrementTimerCounter", "syncTimerState"],
     },
@@ -174,6 +196,7 @@ const timerCounterMachine = setup({
       always: {
         guard: "isTimerCountdownZero",
         target: "finished",
+        actions: ["incrementTimerCounter", "playEndSound"],
       },
     },
     paused: {
@@ -194,7 +217,6 @@ const timerCounterMachine = setup({
           actions: ["resetTimerCountdown", "syncTimerState"],
         },
       },
-      entry: ["incrementTimerCounter", "playEndSound"],
     },
   },
 });

@@ -530,6 +530,7 @@ describe("timerListMachine", () => {
       timerLabel: "Remote Label",
       currentCount: 9,
       remainingTimeInSeconds: 300,
+      timerState: "new",
     });
 
     // Child context updated …
@@ -539,6 +540,192 @@ describe("timerListMachine", () => {
     expect(ctx.remainingTimeInSeconds).toBe(300);
     // … but localStorage not touched (no syncTimerState call)
     expect(localStorage.getItem("timerCounterSavedState")).toBe(storedBefore);
+    actor.stop();
+  });
+
+  // ── State mirroring via TIMER_STATE_SYNCED_FROM_REMOTE ────────────────────
+  // Verifies that a remote timerState value correctly transitions the child
+  // actor into the matching XState state node so controls mirror Device A.
+
+  it("TIMER_STATE_SYNCED_FROM_REMOTE mirrors 'timerSet' state", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    // starts in "new"
+    expect(timerRef.getSnapshot().matches("new")).toBe(true);
+
+    timerRef.send({
+      type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+      timerState: "timerSet",
+      timerLabel: "Test",
+      currentCount: 0,
+      remainingTimeInSeconds: 900,
+    });
+
+    expect(timerRef.getSnapshot().matches("timerSet")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(900);
+    actor.stop();
+  });
+
+  it("TIMER_STATE_SYNCED_FROM_REMOTE mirrors 'paused' state", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+
+    timerRef.send({
+      type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+      timerState: "paused",
+      timerLabel: "Focus",
+      currentCount: 2,
+      remainingTimeInSeconds: 451,
+    });
+
+    expect(timerRef.getSnapshot().matches("paused")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(451);
+    expect(timerRef.getSnapshot().context.currentCount).toBe(2);
+    actor.stop();
+  });
+
+  it("TIMER_STATE_SYNCED_FROM_REMOTE mirrors 'running' state", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+
+    timerRef.send({
+      type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+      timerState: "running",
+      timerLabel: "Work",
+      currentCount: 1,
+      remainingTimeInSeconds: 891,
+    });
+
+    expect(timerRef.getSnapshot().matches("running")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(891);
+    actor.stop();
+  });
+
+  it("TIMER_STATE_SYNCED_FROM_REMOTE mirrors 'finished' state without re-incrementing counter", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+
+    // STDB ships the already-incremented count (Device A incremented it)
+    timerRef.send({
+      type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+      timerState: "finished",
+      timerLabel: "Done",
+      currentCount: 3,
+      remainingTimeInSeconds: 0,
+    });
+
+    expect(timerRef.getSnapshot().matches("finished")).toBe(true);
+    // count must equal the STDB value — NOT incremented again
+    expect(timerRef.getSnapshot().context.currentCount).toBe(3);
+    actor.stop();
+  });
+
+  it("TIMER_STATE_SYNCED_FROM_REMOTE mirrors 'new' state (default / unknown)", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    // move to timerSet first
+    timerRef.send({
+      type: "TIMER_INTERVAL_SET",
+      intervalValue: timerIntervals[0],
+    });
+    expect(timerRef.getSnapshot().matches("timerSet")).toBe(true);
+
+    timerRef.send({
+      type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+      timerState: "new",
+      timerLabel: "Reset",
+      currentCount: 0,
+      remainingTimeInSeconds: 0,
+    });
+
+    expect(timerRef.getSnapshot().matches("new")).toBe(true);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_UPDATED mirrors the remote timerState into the child actor", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 30n,
+          label: "Mirror",
+          currentCount: 0,
+          remainingTimeSeconds: 900,
+          timerState: "timerSet",
+        },
+      ],
+    });
+
+    // Initial state should be timerSet
+    await new Promise((r) => setTimeout(r, 10));
+    expect(
+      actor.getSnapshot().context.timers[0].getSnapshot().matches("timerSet"),
+    ).toBe(true);
+
+    // Remote update: Device A started the timer (now running)
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 30n,
+        label: "Mirror",
+        currentCount: 0,
+        remainingTimeSeconds: 891,
+        timerState: "running",
+      },
+    });
+
+    expect(
+      actor.getSnapshot().context.timers[0].getSnapshot().matches("running"),
+    ).toBe(true);
+    expect(
+      actor.getSnapshot().context.timers[0].getSnapshot().context
+        .remainingTimeInSeconds,
+    ).toBe(891);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_UPDATED mirrors paused state after running", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 31n,
+          label: "PauseTest",
+          currentCount: 0,
+          remainingTimeSeconds: 900,
+          timerState: "running",
+        },
+      ],
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Device A paused
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 31n,
+        label: "PauseTest",
+        currentCount: 0,
+        remainingTimeSeconds: 751,
+        timerState: "paused",
+      },
+    });
+
+    expect(
+      actor.getSnapshot().context.timers[0].getSnapshot().matches("paused"),
+    ).toBe(true);
+    expect(
+      actor.getSnapshot().context.timers[0].getSnapshot().context
+        .remainingTimeInSeconds,
+    ).toBe(751);
     actor.stop();
   });
 });

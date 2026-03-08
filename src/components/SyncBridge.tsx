@@ -53,6 +53,7 @@ export function SyncBridge() {
             label: row.label,
             currentCount: row.currentCount,
             remainingTimeSeconds: row.remainingTimeSeconds,
+            timerState: row.timerState,
           },
         });
       }
@@ -74,6 +75,7 @@ export function SyncBridge() {
           label: newRow.label,
           currentCount: newRow.currentCount,
           remainingTimeSeconds: newRow.remainingTimeSeconds,
+          timerState: newRow.timerState,
         },
       });
     });
@@ -103,6 +105,7 @@ export function SyncBridge() {
             label: r.label,
             currentCount: r.currentCount,
             remainingTimeSeconds: r.remainingTimeSeconds,
+            timerState: r.timerState,
           })),
         });
       })
@@ -155,6 +158,8 @@ export function SyncBridge() {
             continue;
           }
           const ctx = timerRef.getSnapshot()?.context;
+          const timerState =
+            (timerRef.getSnapshot()?.value as string | undefined) ?? "new";
           if (ctx) {
             conn.reducers
               .updateTimerCounter({
@@ -162,6 +167,7 @@ export function SyncBridge() {
                 label: ctx.timerLabel,
                 currentCount: ctx.currentCount,
                 remainingTimeSeconds: ctx.remainingTimeInSeconds,
+                timerState,
               })
               .catch(() => {});
           }

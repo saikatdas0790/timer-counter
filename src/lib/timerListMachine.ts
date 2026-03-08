@@ -13,6 +13,7 @@ export type StdbTimerRow = {
   label: string;
   currentCount: number;
   remainingTimeSeconds: number;
+  timerState?: string; // optional — defaults to "new" when absent
 };
 
 const timerListMachine = setup({
@@ -117,16 +118,24 @@ const timerListMachine = setup({
         },
         STDB_SYNC_APPLIED: {
           actions: assign(({ event, spawn }) => {
-            const timers = event.rows.map((row) =>
-              spawn("timerCounter", {
+            const timers = event.rows.map((row) => {
+              const timer = spawn("timerCounter", {
                 id: `stdb-${row.id}`,
                 input: {
                   currentCount: row.currentCount,
                   remainingTimeInSeconds: row.remainingTimeSeconds,
                   timerLabel: row.label,
                 },
-              }),
-            );
+              });
+              timer.send({
+                type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+                timerState: row.timerState ?? "new",
+                timerLabel: row.label,
+                currentCount: row.currentCount,
+                remainingTimeInSeconds: row.remainingTimeSeconds,
+              });
+              return timer;
+            });
             const stdbIdMap: Record<string, bigint> = {};
             for (const row of event.rows) {
               stdbIdMap[`stdb-${row.id}`] = row.id;
@@ -148,18 +157,23 @@ const timerListMachine = setup({
           actions: assign(({ context, event, spawn }) => {
             const actorId = `stdb-${event.row.id}`;
             if (context.timers.some((t) => t.id === actorId)) return {};
+            const timer = spawn("timerCounter", {
+              id: actorId,
+              input: {
+                currentCount: event.row.currentCount,
+                remainingTimeInSeconds: event.row.remainingTimeSeconds,
+                timerLabel: event.row.label,
+              },
+            });
+            timer.send({
+              type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+              timerState: event.row.timerState ?? "new",
+              timerLabel: event.row.label,
+              currentCount: event.row.currentCount,
+              remainingTimeInSeconds: event.row.remainingTimeSeconds,
+            });
             return {
-              timers: [
-                ...context.timers,
-                spawn("timerCounter", {
-                  id: actorId,
-                  input: {
-                    currentCount: event.row.currentCount,
-                    remainingTimeInSeconds: event.row.remainingTimeSeconds,
-                    timerLabel: event.row.label,
-                  },
-                }),
-              ],
+              timers: [...context.timers, timer],
               stdbIdMap: { ...context.stdbIdMap, [actorId]: event.row.id },
             };
           }),
@@ -179,6 +193,7 @@ const timerListMachine = setup({
               timerLabel: event.row.label,
               currentCount: event.row.currentCount,
               remainingTimeInSeconds: event.row.remainingTimeSeconds,
+              timerState: event.row.timerState ?? "new",
             });
           },
         },
