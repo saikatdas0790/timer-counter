@@ -40,7 +40,13 @@ const timerCounterMachine = setup({
       | { type: "TIMER_COUNTER_DECREMENTED" }
       | { type: "TIMER_COUNTER_LABEL_CHANGED"; updatedLabel: string }
       | { type: "TIMER_COUNTER_DELETED"; timerId: string }
-      | { type: "ONE_SECOND_ELAPSED" },
+      | { type: "ONE_SECOND_ELAPSED" }
+      | {
+          type: "TIMER_STATE_SYNCED_FROM_REMOTE";
+          timerLabel: string;
+          currentCount: number;
+          remainingTimeInSeconds: number;
+        },
     input: {} as {
       remainingTimeInSeconds?: number;
       timerLabel?: string;
@@ -75,6 +81,19 @@ const timerCounterMachine = setup({
     syncTimerState: sendParent({
       type: "TIMER_COUNTER_STATE_CHANGED",
     }),
+    // Applies a full context update from SpacetimeDB without notifying the
+    // parent (no syncTimerState), so the update is not echoed back to STDB.
+    syncFromRemote: assign(({ event }) => {
+      const e = event as Extract<
+        typeof event,
+        { type: "TIMER_STATE_SYNCED_FROM_REMOTE" }
+      >;
+      return {
+        timerLabel: e.timerLabel,
+        currentCount: e.currentCount,
+        remainingTimeInSeconds: e.remainingTimeInSeconds,
+      };
+    }),
     setTimerCountdown: assign({
       remainingTimeInSeconds: ({ event }) =>
         (event as Extract<typeof event, { type: "TIMER_INTERVAL_SET" }>)
@@ -100,6 +119,9 @@ const timerCounterMachine = setup({
     currentCount: input?.currentCount ?? 0,
   }),
   on: {
+    TIMER_STATE_SYNCED_FROM_REMOTE: {
+      actions: "syncFromRemote",
+    },
     TIMER_COUNTER_DECREMENTED: {
       actions: ["decrementTimerCounter", "syncTimerState"],
     },

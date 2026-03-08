@@ -370,4 +370,175 @@ describe("timerListMachine", () => {
     expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(0);
     actor.stop();
   });
+
+  // ── STDB_TIMER_UPDATED ────────────────────────────────────────────────────
+  // Verifies that a remote update from SpacetimeDB reaches the child actor
+  // and updates its context, WITHOUT echoing the change back to STDB
+  // (i.e., without writing to localStorage via syncTimerState).
+
+  it("STDB_TIMER_UPDATED updates the child actor label", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 20n,
+          label: "Old Label",
+          currentCount: 0,
+          remainingTimeSeconds: 0,
+        },
+      ],
+    });
+
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 20n,
+        label: "New Label",
+        currentCount: 0,
+        remainingTimeSeconds: 0,
+      },
+    });
+
+    const ctx = actor.getSnapshot().context.timers[0].getSnapshot().context;
+    expect(ctx.timerLabel).toBe("New Label");
+    actor.stop();
+  });
+
+  it("STDB_TIMER_UPDATED updates the child actor currentCount", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        { id: 21n, label: "Test", currentCount: 0, remainingTimeSeconds: 0 },
+      ],
+    });
+
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: { id: 21n, label: "Test", currentCount: 7, remainingTimeSeconds: 0 },
+    });
+
+    const ctx = actor.getSnapshot().context.timers[0].getSnapshot().context;
+    expect(ctx.currentCount).toBe(7);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_UPDATED updates the child actor remainingTimeInSeconds", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        { id: 22n, label: "Test", currentCount: 0, remainingTimeSeconds: 0 },
+      ],
+    });
+
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 22n,
+        label: "Test",
+        currentCount: 0,
+        remainingTimeSeconds: 1800,
+      },
+    });
+
+    const ctx = actor.getSnapshot().context.timers[0].getSnapshot().context;
+    expect(ctx.remainingTimeInSeconds).toBe(1800);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_UPDATED updates all three fields simultaneously", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        { id: 23n, label: "Old", currentCount: 1, remainingTimeSeconds: 100 },
+      ],
+    });
+
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 23n,
+        label: "Updated",
+        currentCount: 5,
+        remainingTimeSeconds: 900,
+      },
+    });
+
+    const ctx = actor.getSnapshot().context.timers[0].getSnapshot().context;
+    expect(ctx.timerLabel).toBe("Updated");
+    expect(ctx.currentCount).toBe(5);
+    expect(ctx.remainingTimeInSeconds).toBe(900);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_UPDATED is a no-op for unknown stdb id", async () => {
+    const actor = await startReadyMachine();
+    // Should not throw for an id not in stdbIdMap
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 9999n,
+        label: "Ghost",
+        currentCount: 0,
+        remainingTimeSeconds: 0,
+      },
+    });
+    expect(actor.getSnapshot().context.timers).toHaveLength(0);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_UPDATED does NOT write to localStorage (no echo to STDB)", async () => {
+    const actor = await startReadyMachine();
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        { id: 24n, label: "Test", currentCount: 0, remainingTimeSeconds: 0 },
+      ],
+    });
+    // Capture the localStorage state right after STDB_SYNC_APPLIED
+    const storedBefore = localStorage.getItem("timerCounterSavedState");
+
+    actor.send({
+      type: "STDB_TIMER_UPDATED",
+      row: {
+        id: 24n,
+        label: "Remote Update",
+        currentCount: 3,
+        remainingTimeSeconds: 500,
+      },
+    });
+
+    // localStorage must not have been rewritten by the remote update —
+    // syncFromRemote intentionally skips syncTimerState to prevent echoing
+    // the same values back to STDB.
+    expect(localStorage.getItem("timerCounterSavedState")).toBe(storedBefore);
+    actor.stop();
+  });
+
+  it("TIMER_STATE_SYNCED_FROM_REMOTE sent directly to child does not write localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    actor.send({ type: "TIMER_COUNTER_STATE_CHANGED" }); // initial save
+    const storedBefore = localStorage.getItem("timerCounterSavedState");
+
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({
+      type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+      timerLabel: "Remote Label",
+      currentCount: 9,
+      remainingTimeInSeconds: 300,
+    });
+
+    // Child context updated …
+    const ctx = timerRef.getSnapshot().context;
+    expect(ctx.timerLabel).toBe("Remote Label");
+    expect(ctx.currentCount).toBe(9);
+    expect(ctx.remainingTimeInSeconds).toBe(300);
+    // … but localStorage not touched (no syncTimerState call)
+    expect(localStorage.getItem("timerCounterSavedState")).toBe(storedBefore);
+    actor.stop();
+  });
 });

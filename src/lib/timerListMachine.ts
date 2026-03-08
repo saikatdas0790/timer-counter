@@ -28,6 +28,7 @@ const timerListMachine = setup({
       | { type: "STDB_ID_LINKED"; actorId: string; stdbId: bigint }
       | { type: "STDB_SYNC_APPLIED"; rows: StdbTimerRow[] }
       | { type: "STDB_TIMER_INSERTED"; row: StdbTimerRow }
+      | { type: "STDB_TIMER_UPDATED"; row: StdbTimerRow }
       | { type: "STDB_TIMER_DELETED"; stdbId: bigint },
   },
   actors: {
@@ -162,6 +163,24 @@ const timerListMachine = setup({
               stdbIdMap: { ...context.stdbIdMap, [actorId]: event.row.id },
             };
           }),
+        },
+        STDB_TIMER_UPDATED: {
+          // Find the child actor and send it the remote values directly.
+          // syncFromRemote deliberately does NOT call syncTimerState, so
+          // actorRef.subscribe (SyncBridge) will NOT re-upload to STDB.
+          actions: ({ context, event }) => {
+            const actorId = Object.entries(context.stdbIdMap).find(
+              ([, id]) => id === event.row.id,
+            )?.[0];
+            if (!actorId) return;
+            const timerRef = context.timers.find((t) => t.id === actorId);
+            timerRef?.send({
+              type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+              timerLabel: event.row.label,
+              currentCount: event.row.currentCount,
+              remainingTimeInSeconds: event.row.remainingTimeSeconds,
+            });
+          },
         },
         STDB_TIMER_DELETED: {
           actions: assign(({ context, event }) => {

@@ -24,8 +24,9 @@ export function SyncBridge() {
 
     // FIFO queue of local actorIds whose STDB create is in-flight
     const pendingCreates: string[] = [];
-    // Actor IDs deleted by a remote STDB event (skip re-issuing delete to STDB)
+    // Actor IDs whose last change came FROM STDB (skip re-uploading to STDB)
     const stdbOriginDeletions = new Set<string>();
+    const stdbOriginUpdates = new Set<string>();
     // True after the first subscription.onApplied fires
     let initialized = false;
     let synced = false;
@@ -55,6 +56,26 @@ export function SyncBridge() {
           },
         });
       }
+    });
+
+    conn.db.timer_counter.onUpdate((_, _oldRow, newRow) => {
+      if (!initialized) return;
+      // Mark this actor so the actorRef.subscribe callback skips the
+      // updateTimerCounter call that would otherwise echo it back to STDB.
+      const snapshot = actorRef.getSnapshot();
+      const actorId = Object.entries(snapshot.context.stdbIdMap).find(
+        ([, id]) => id === newRow.id,
+      )?.[0];
+      if (actorId) stdbOriginUpdates.add(actorId);
+      actorRef.send({
+        type: "STDB_TIMER_UPDATED",
+        row: {
+          id: newRow.id,
+          label: newRow.label,
+          currentCount: newRow.currentCount,
+          remainingTimeSeconds: newRow.remainingTimeSeconds,
+        },
+      });
     });
 
     conn.db.timer_counter.onDelete((_, row) => {
@@ -123,10 +144,16 @@ export function SyncBridge() {
         stdbOriginDeletions.delete(id);
       }
 
-      // Sync current state for all linked timers (handles label + count changes)
+      // Sync current state for all linked timers (handles label, count, time
+      // changes). Skip timers whose update originated from STDB to avoid
+      // echoing the same values back.
       for (const timerRef of currentTimers) {
         const stdbId = snapshot.context.stdbIdMap[timerRef.id];
         if (stdbId !== undefined) {
+          if (stdbOriginUpdates.has(timerRef.id)) {
+            stdbOriginUpdates.delete(timerRef.id);
+            continue;
+          }
           const ctx = timerRef.getSnapshot()?.context;
           if (ctx) {
             conn.reducers
