@@ -11,7 +11,11 @@ export default function OidcProvider({
   const redirectUri =
     typeof window !== "undefined" ? window.location.origin : "";
 
-  const stateStore =
+  // Both stateStore (PKCE code_verifier/state) and userStore (tokens) use
+  // localStorage so that they survive across tabs and browser restarts.
+  // sessionStorage (the oidc-client-ts default for userStore) is cleared on
+  // every new tab, which would force the user to sign in each time.
+  const localStorageStore =
     typeof window !== "undefined"
       ? new WebStorageStateStore({ store: window.localStorage })
       : undefined;
@@ -23,7 +27,8 @@ export default function OidcProvider({
       redirect_uri={redirectUri}
       scope="openid profile email"
       automaticSilentRenew={true}
-      stateStore={stateStore}
+      stateStore={localStorageStore}
+      userStore={localStorageStore}
       onSigninCallback={() => {
         window.history.replaceState(
           {},
