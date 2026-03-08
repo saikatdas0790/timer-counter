@@ -40,14 +40,14 @@ const timerCounterMachine = setup({
       | { type: "TIMER_COUNTER_DECREMENTED" }
       | { type: "TIMER_COUNTER_LABEL_CHANGED"; updatedLabel: string }
       | { type: "TIMER_COUNTER_DELETED"; timerId: string }
-      | { type: "ONE_SECOND_ELAPSED" }
+      | { type: "SECONDS_ELAPSED"; seconds: number }
       | {
-          type: "TIMER_STATE_SYNCED_FROM_REMOTE";
-          timerLabel: string;
-          currentCount: number;
-          remainingTimeInSeconds: number;
-          timerState: string;
-        },
+        type: "TIMER_STATE_SYNCED_FROM_REMOTE";
+        timerLabel: string;
+        currentCount: number;
+        remainingTimeInSeconds: number;
+        timerState: string;
+      },
     input: {} as {
       remainingTimeInSeconds?: number;
       timerLabel?: string;
@@ -56,8 +56,12 @@ const timerCounterMachine = setup({
   },
   actions: {
     decrementTimerCountdown: assign({
-      remainingTimeInSeconds: ({ context }) =>
-        context.remainingTimeInSeconds - 1,
+      remainingTimeInSeconds: ({ context, event }) => {
+        const seconds =
+          (event as Extract<typeof event, { type: "SECONDS_ELAPSED" }>)
+            .seconds ?? 1;
+        return Math.max(0, context.remainingTimeInSeconds - seconds);
+      },
     }),
     decrementTimerCounter: assign({
       currentCount: ({ context }) =>
@@ -188,7 +192,7 @@ const timerCounterMachine = setup({
           target: "paused",
           actions: "syncTimerState",
         },
-        ONE_SECOND_ELAPSED: {
+        SECONDS_ELAPSED: {
           actions: ["decrementTimerCountdown", "syncTimerState"],
           target: "running",
         },

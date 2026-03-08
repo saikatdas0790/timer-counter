@@ -28,8 +28,15 @@ export default function TimerCounter({ timer }: Props) {
       new URL("./TimerWorker.ts", import.meta.url),
     );
     workerRef.current.addEventListener("message", (e) => {
-      if (e.data === "ONE_SECOND_ELAPSED") {
-        timer.send({ type: "ONE_SECOND_ELAPSED" });
+      if (
+        e.data &&
+        typeof e.data === "object" &&
+        e.data.type === "SECONDS_ELAPSED"
+      ) {
+        timer.send({
+          type: "SECONDS_ELAPSED",
+          seconds: e.data.seconds as number,
+        });
       }
     });
     return () => {
