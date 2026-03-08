@@ -173,16 +173,19 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 `SyncBridge` (`src/components/SyncBridge.tsx`) is a headless React component rendered inside `TimerListContext.Provider`. It owns the entire STDB connection lifecycle:
 
 **STDB → machine:**
+
 - `onApplied`: fires once when the subscription is established; sends `STDB_SYNC_APPLIED` with all rows (replaces all local actors and localStorage)
 - `conn.db.timer_counter.onInsert`: after initialization, either links a pending local create (`STDB_ID_LINKED`) or sends `STDB_TIMER_INSERTED` for a remote device insert
 - `conn.db.timer_counter.onDelete`: sends `STDB_TIMER_DELETED`; uses `stdbOriginDeletions` set to avoid re-issuing the delete to STDB
 
 **Machine → STDB (via `actorRef.subscribe`):**
+
 - New actor IDs without `stdb-` prefix → `createTimerCounter`; actor ID queued in `pendingCreates` (FIFO) for linking
 - Missing actor IDs not in `stdbOriginDeletions` → `deleteTimerCounter` (stdbId looked up from `stdbIdMap`)
 - All actors with a known stdbId → `updateTimerCounter` (handles label + count changes)
 
 **`timerListMachine` STDB context:**
+
 - `stdbIdMap: Record<string, bigint>` — maps actor ID → STDB row ID
 - Actors spawned from STDB data use IDs like `stdb-${row.id}`; locally-created actors use `${Date.now()}`
 - `STDB_SYNC_APPLIED` replaces the entire timer list (STDB is authoritative)

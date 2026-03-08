@@ -82,14 +82,13 @@ const timerListMachine = setup({
           })),
         },
         TIMER_COUNTER_DELETE_RECEIVED: {
+          // Only remove from timers — stdbIdMap entry must stay intact so that
+          // SyncBridge can look up the stdbId and call deleteTimerCounter.
+          // stdbIdMap is cleaned up by STDB_TIMER_DELETED once STDB confirms
+          // the delete (for remote deletions) or by the next STDB_SYNC_APPLIED.
           actions: assign({
             timers: ({ context, event }) =>
               context.timers.filter((timer) => timer.id !== event.timerId),
-            stdbIdMap: ({ context, event }) => {
-              const map = { ...context.stdbIdMap };
-              delete map[event.timerId];
-              return map;
-            },
           }),
         },
         TIMER_COUNTER_STATE_CHANGED: {

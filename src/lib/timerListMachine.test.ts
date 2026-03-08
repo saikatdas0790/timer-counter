@@ -64,14 +64,31 @@ describe("timerListMachine", () => {
     actor.stop();
   });
 
-  it("TIMER_COUNTER_DELETE_RECEIVED also removes stdbIdMap entry", async () => {
+  it("TIMER_COUNTER_DELETE_RECEIVED preserves stdbIdMap entry so SyncBridge can call deleteTimerCounter", async () => {
     const actor = await startReadyMachine();
     actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
     const timerId = actor.getSnapshot().context.timers[0].id;
-    // Manually link a stdb id
     actor.send({ type: "STDB_ID_LINKED", actorId: timerId, stdbId: 42n });
     expect(actor.getSnapshot().context.stdbIdMap[timerId]).toBe(42n);
     actor.send({ type: "TIMER_COUNTER_DELETE_RECEIVED", timerId });
+    // Timer is removed from the list …
+    expect(actor.getSnapshot().context.timers).toHaveLength(0);
+    // … but stdbIdMap entry MUST remain so SyncBridge can still read the
+    // stdbId and call deleteTimerCounter on SpacetimeDB.
+    expect(actor.getSnapshot().context.stdbIdMap[timerId]).toBe(42n);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_DELETED clears stdbIdMap entry after STDB confirms the delete", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerId = actor.getSnapshot().context.timers[0].id;
+    actor.send({ type: "STDB_ID_LINKED", actorId: timerId, stdbId: 42n });
+    // Delete locally (stdbIdMap kept intact, see above)
+    actor.send({ type: "TIMER_COUNTER_DELETE_RECEIVED", timerId });
+    expect(actor.getSnapshot().context.stdbIdMap[timerId]).toBe(42n);
+    // STDB confirms the delete — now the map entry should be cleared
+    actor.send({ type: "STDB_TIMER_DELETED", stdbId: 42n });
     expect(actor.getSnapshot().context.stdbIdMap[timerId]).toBeUndefined();
     actor.stop();
   });
