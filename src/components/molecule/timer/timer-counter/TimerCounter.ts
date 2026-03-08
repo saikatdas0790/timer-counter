@@ -42,12 +42,12 @@ const timerCounterMachine = setup({
       | { type: "TIMER_COUNTER_DELETED"; timerId: string }
       | { type: "SECONDS_ELAPSED"; seconds: number }
       | {
-        type: "TIMER_STATE_SYNCED_FROM_REMOTE";
-        timerLabel: string;
-        currentCount: number;
-        remainingTimeInSeconds: number;
-        timerState: string;
-      },
+          type: "TIMER_STATE_SYNCED_FROM_REMOTE";
+          timerLabel: string;
+          currentCount: number;
+          remainingTimeInSeconds: number;
+          timerState: string;
+        },
     input: {} as {
       remainingTimeInSeconds?: number;
       timerLabel?: string;

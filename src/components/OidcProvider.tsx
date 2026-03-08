@@ -36,6 +36,9 @@ export default function OidcProvider({
           window.location.pathname,
         );
       }}
+      onRemoveUser={() => {
+        console.log("User session removed (logout or expiry)");
+      }}
     >
       {children}
     </AuthProvider>

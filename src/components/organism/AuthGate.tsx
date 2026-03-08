@@ -12,14 +12,32 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     // refresh token (or IdP session) is still valid this avoids the login page
     // entirely. If it fails the sign-in button is shown below.
     useEffect(() => {
-        if (!auth.isLoading && !auth.isAuthenticated && !auth.activeNavigator && !auth.error) {
+        if (
+            !auth.isLoading &&
+            !auth.isAuthenticated &&
+            !auth.activeNavigator &&
+            !auth.error
+        ) {
             auth.signinSilent().catch(() => {
                 // Falls through — the sign-in button is rendered.
             });
         }
         // auth.signinSilent is stable (bound to UserManager); omitting from deps is safe.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [auth.isLoading, auth.isAuthenticated, auth.activeNavigator, auth.error]);
+
+    // If automatic silent renewal fails, try to recover by attempting silent sign-in.
+    // This handles cases where renewal failed due to temporary network issues.
+    useEffect(() => {
+        if (auth.error && auth.isAuthenticated) {
+            console.error("Auth error during renewal:", auth.error);
+
+            // Attempt silent sign-in to recover
+            auth.signinSilent().catch((err) => {
+                console.error("Silent sign-in recovery failed:", err);
+                // If silent recovery fails, the error banner will show and user can manually sign in
+            });
+        }
+    }, [auth.error, auth.isAuthenticated]);
 
     // Show skeleton while the library initialises or while silent sign-in is in flight.
     if (auth.isLoading || auth.activeNavigator === "signinSilent") {
@@ -46,9 +64,20 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         <>
             {auth.error && (
                 <div className="fixed left-0 right-0 top-0 z-50 flex items-center justify-between bg-red-600 px-4 py-2 text-sm text-white">
-                    <span>Session error — sync paused.</span>
+                    <span>
+                        Session error — sync paused.{" "}
+                        {auth.user?.expires_in && (
+                            <span className="opacity-80">
+                                (Token expires in {Math.floor(auth.user.expires_in / 60)}m)
+                            </span>
+                        )}
+                    </span>
                     <button
-                        onClick={() => auth.signinRedirect()}
+                        onClick={() => {
+                            // Clear error state and attempt sign-in
+                            auth.clearStaleState();
+                            auth.signinRedirect();
+                        }}
                         className="ml-4 rounded bg-white px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
                     >
                         Sign in again

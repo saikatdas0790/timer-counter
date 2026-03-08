@@ -12,4 +12,4 @@ setInterval(() => {
   postMessage({ type: "SECONDS_ELAPSED", seconds });
 }, 1000);
 
-export { };
+export {};
