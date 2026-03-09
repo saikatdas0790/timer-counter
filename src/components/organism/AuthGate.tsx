@@ -2,13 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { useAuth } from "react-oidc-context";
+import type { AuthContextProps } from "react-oidc-context";
 import TimerSkeletonGrid from "@/components/organism/timer-grid/TimerSkeletonGrid";
 
 // Proactively trigger silent renewal when the tab becomes visible with fewer
-// than this many seconds left on the access token. The automatic renewal fires
-// at ~60 s remaining, but if the browser woke from sleep the network may not
-// be ready yet — starting early gives the library more time to retry.
-const PROACTIVE_RENEW_THRESHOLD_SECONDS = 90;
+// than this many seconds left on the access token. We use the same window as
+// accessTokenExpiringNotificationTime (300 s) so we catch any renewal that
+// was skipped while the tab was hidden.
+const PROACTIVE_RENEW_THRESHOLD_SECONDS = 300;
 
 // Errors that indicate the IdP session / refresh token is gone and no amount
 // of silent retrying will help. We must stop and let the user sign in manually.
@@ -35,6 +36,25 @@ function isNetworkError(err: Error): boolean {
     );
 }
 
+// Prefer a fetch-based refresh-token grant over the iframe silent-renew path.
+//
+// oidc-client-ts already uses a direct token-endpoint POST (fetch) when a
+// refresh token is present, and only falls back to an iframe when there is
+// none. The iframe path is problematic: browsers suspend iframes in hidden
+// tabs, causing multi-minute timeouts. By routing through this helper we
+// ensure we never accidentally land on the iframe path — if the refresh token
+// is gone we redirect immediately instead.
+async function renewOrRedirect(auth: AuthContextProps): Promise<void> {
+    if (auth.user?.refresh_token) {
+        // refresh_token present → oidc-client-ts uses token endpoint (fetch), no iframe
+        await auth.signinSilent();
+        return;
+    }
+    // No refresh token → silent renew would use iframe; skip it and redirect.
+    console.log("[AuthGate] No refresh token available — redirecting to sign-in.");
+    return auth.signinRedirect();
+}
+
 export default function AuthGate({ children }: { children: React.ReactNode }) {
     const auth = useAuth();
     const latestAuthRef = useRef(auth);
@@ -51,11 +71,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             !auth.activeNavigator &&
             !auth.error
         ) {
-            auth.signinSilent().catch(() => {
+            renewOrRedirect(auth).catch(() => {
                 // Falls through — the sign-in button is rendered.
             });
         }
-        // auth.signinSilent is stable (bound to UserManager); omitting from deps is safe.
+        // renewOrRedirect captures auth by value; stable deps are sufficient.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [auth.isLoading, auth.isAuthenticated, auth.activeNavigator, auth.error]);
 
     // Recovery with retry-and-backoff when automatic silent renewal fails with
@@ -101,11 +122,21 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
                     console.warn("[AuthGate] Error became terminal during backoff — stopping retries.");
                     return;
                 }
-                // Don't start a second concurrent signinSilent.
+                // Don't start a second concurrent renewal.
                 if (current.activeNavigator) return;
+                // If there's no refresh token renewOrRedirect will call
+                // signinRedirect, which navigates the page. Don't do that
+                // silently while the tab is hidden — defer to the
+                // visibilitychange handler which will redirect when the
+                // user returns. If we do have a refresh token the call is
+                // a plain fetch and works fine in background tabs.
+                if (document.visibilityState === "hidden" && !current.user?.refresh_token) {
+                    console.log(`[AuthGate] Tab hidden, no refresh token — deferring recovery to next visibility.`);
+                    return;
+                }
 
                 console.log(`[AuthGate] Recovery attempt after ${delay}ms…`);
-                current.signinSilent().then(() => {
+                renewOrRedirect(current).then(() => {
                     recovered = true;
                     console.log("[AuthGate] Recovery succeeded.");
                 }).catch((err) => {
@@ -116,30 +147,44 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         }
 
         return () => timers.forEach(clearTimeout);
-    // Re-run only when auth.error transitions from falsy → truthy (new error).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // Re-run only when auth.error transitions from falsy → truthy (new error).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [auth.error]);
 
-    // Proactive renewal on tab-visibility restore.
-    // When the tab becomes visible with a short-lived (or already expired) token,
-    // call signinSilent immediately — before the oidc-client-ts automatic timer
-    // fires — giving it the best chance while the network wakes up.
-    // Guards: skip if a renewal is already in flight (activeNavigator is set),
-    // and skip if the current error is terminal (requires manual sign-in).
+    // Proactive visibility-based renewal AND auto-redirect on terminal errors.
+    //
+    // On every tab-visible event:
+    //   a) If token is expiring (<300 s) and no error / retriable error: signinSilent
+    //   b) If there's a TERMINAL error + token is expired: auto-redirect.
+    //      Timer state lives in localStorage and is fully restored after the
+    //      redirect completes, so the user loses nothing.
     useEffect(() => {
         const onVisible = () => {
             if (document.visibilityState !== "visible") return;
             const current = latestAuthRef.current;
             if (!current.isAuthenticated) return;
-            if (current.activeNavigator) return;  // already in flight
-            if (current.error && isTerminalError(current.error)) return;  // needs manual login
+            if (current.activeNavigator) return; // already in flight
+
             const expiresIn = current.user?.expires_in ?? Infinity;
-            if (expiresIn < PROACTIVE_RENEW_THRESHOLD_SECONDS) {
+
+            // Terminal error + expired token = redirect immediately.
+            // The user is already effectively signed out; redirect gets them
+            // back without needing to click the banner.
+            if (current.error && isTerminalError(current.error) && expiresIn <= 0) {
+                console.log("[AuthGate] Terminal error + expired token on tab visible — redirecting to sign-in.");
+                current.signinRedirect().catch((err) => {
+                    console.warn("[AuthGate] Auto-redirect failed:", err);
+                });
+                return;
+            }
+
+            // Proactive renewal when token is getting short.
+            if (!current.error && expiresIn < PROACTIVE_RENEW_THRESHOLD_SECONDS) {
                 console.log(
                     `[AuthGate] Tab visible with ${expiresIn}s left — ` +
-                    `proactively calling signinSilent()`,
+                    `proactively calling renewOrRedirect()`,
                 );
-                current.signinSilent().catch((err) => {
+                renewOrRedirect(current).catch((err) => {
                     console.warn("[AuthGate] Proactive renewal failed:", err);
                 });
             }
