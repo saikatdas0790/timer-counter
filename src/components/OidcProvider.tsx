@@ -39,9 +39,6 @@ export default function OidcProvider({
       onRemoveUser={() => {
         console.log("User session removed (logout or expiry)");
       }}
-      onSilentRenewError={(error) => {
-        console.error("Silent token renewal failed:", error);
-      }}
     >
       {children}
     </AuthProvider>
