@@ -161,10 +161,12 @@ export function AuthLogger() {
         });
 
         const removeAccessTokenExpiring = auth.events.addAccessTokenExpiring(() => {
-            const expiresIn = latestAuthRef.current.user?.expires_in;
+            const user = latestAuthRef.current.user;
+            const expiresIn = user?.expires_in;
+            const hasRefreshToken = Boolean(user?.refresh_token);
             logEvent(
                 "TOKEN_EXPIRING",
-                `access token expiring — expires_in=${expiresIn ?? "?"}s`,
+                `access token expiring — expires_in=${expiresIn ?? "?"}s refresh_token=${hasRefreshToken ? "present" : "absent"}`,
             );
         });
 

@@ -60,6 +60,35 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     const latestAuthRef = useRef(auth);
     latestAuthRef.current = auth;
 
+    // Own the token renewal lifecycle.
+    //
+    // SpacetimeAuth (beta) does not issue refresh tokens, so oidc-client-ts's
+    // automaticSilentRenew would fall back to an iframe with prompt=none. That
+    // iframe always fails with "End-User authentication is required" once the
+    // access token is near expiry. Instead we:
+    //   1. Subscribe to accessTokenExpiring (fires 300 s before expiry).
+    //   2. Call renewOrRedirect — if a refresh_token is present it does a
+    //      fetch-based token grant (no iframe); if not it does signinRedirect.
+    //   3. signinRedirect navigates to SpacetimeDB's IdP. The IdP session
+    //      typically lasts much longer than 15 min, so the user is signed back
+    //      in transparently (no username/password prompt). Timer state is
+    //      preserved in localStorage across the redirect.
+    useEffect(() => {
+        const handleExpiring = () => {
+            const current = latestAuthRef.current;
+            if (!current.isAuthenticated) return;
+            if (current.activeNavigator) return; // already in flight
+            console.log(
+                `[AuthGate] accessTokenExpiring fired (expires_in=${current.user?.expires_in}s) — calling renewOrRedirect`,
+            );
+            renewOrRedirect(current).catch((err) => {
+                console.warn("[AuthGate] renewOrRedirect on expiring failed:", err);
+            });
+        };
+        auth.events.addAccessTokenExpiring(handleExpiring);
+        return () => auth.events.removeAccessTokenExpiring(handleExpiring);
+    }, [auth.events]);
+
     // When the library finishes loading but the user isn't signed in, attempt a
     // silent sign-in. For returning users whose access token expired but whose
     // refresh token (or IdP session) is still valid this avoids the login page
@@ -90,9 +119,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         if (!auth.error || !auth.isAuthenticated) return;
 
-        // Bail out immediately for terminal errors — no point retrying.
+        // Terminal error means the refresh token / IdP session is dead — no
+        // silent renewal can help. If the tab is already visible, redirect
+        // immediately (localStorage preserves all timer state). If the tab is
+        // hidden, the visibility handler below will redirect on next focus.
         if (isTerminalError(auth.error)) {
             console.warn("[AuthGate] Terminal auth error — not retrying:", auth.error.message);
+            if (document.visibilityState === "visible" && !auth.activeNavigator) {
+                console.log("[AuthGate] Tab visible with terminal error — redirecting to sign-in.");
+                auth.signinRedirect().catch((err) => {
+                    console.warn("[AuthGate] Auto-redirect failed:", err);
+                });
+            }
             return;
         }
 
@@ -167,11 +205,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
             const expiresIn = current.user?.expires_in ?? Infinity;
 
-            // Terminal error + expired token = redirect immediately.
-            // The user is already effectively signed out; redirect gets them
-            // back without needing to click the banner.
-            if (current.error && isTerminalError(current.error) && expiresIn <= 0) {
-                console.log("[AuthGate] Terminal error + expired token on tab visible — redirecting to sign-in.");
+            // Terminal error = refresh token is dead, renewal is impossible.
+            // Redirect as soon as the tab is visible regardless of how much
+            // time is left on the access token — there is nothing useful we
+            // can do with it since sync is already paused.
+            if (current.error && isTerminalError(current.error)) {
+                console.log(`[AuthGate] Terminal error on tab visible (expires_in=${expiresIn}s) — redirecting to sign-in.`);
                 current.signinRedirect().catch((err) => {
                     console.warn("[AuthGate] Auto-redirect failed:", err);
                 });

@@ -25,18 +25,18 @@ export default function OidcProvider({
       authority="https://auth.spacetimedb.com/oidc"
       client_id={process.env.NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_ID!}
       redirect_uri={redirectUri}
-      scope="openid profile email offline_access"
-      automaticSilentRenew={true}
-      // Fire the auto-renewal timer 5 minutes before expiry (not the default
-      // ~60 s). Renewal at 5 min gives the library time to succeed while the
-      // tab is still likely visible — if the tab is hidden much longer than
-      // that, there's nothing we can do silently and we fall back to redirect.
+      scope="openid profile email"
+      automaticSilentRenew={false}
+      // We handle token renewal ourselves (see AuthGate) via the
+      // accessTokenExpiring event. oidc-client-ts's built-in
+      // automaticSilentRenew falls back to an iframe when there is no
+      // refresh_token; SpacetimeAuth (currently in beta) does not issue
+      // refresh tokens for public clients, so the iframe path always fires
+      // and always fails with "End-User authentication is required".
+      //
+      // Fire the expiring event 5 minutes before expiry so we have time to
+      // redirect and complete the sign-in while the IdP session is still alive.
       accessTokenExpiringNotificationTimeInSeconds={300}
-      // Fail the iframe-based silent renew quickly (default can be 60 s+).
-      // If the refresh-token grant is going to work, it responds in <1 s.
-      // If we're falling back to an iframe and the tab is hidden, we want to
-      // know fast so we can redirect rather than wait a minute.
-      silentRequestTimeoutInSeconds={15}
       stateStore={localStorageStore}
       userStore={localStorageStore}
       onSigninCallback={(user) => {
