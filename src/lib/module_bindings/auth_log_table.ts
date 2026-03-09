@@ -10,22 +10,10 @@ import {
   type Infer as __Infer,
 } from "spacetimedb";
 
-export const AuthLog = __t.object("AuthLog", {
-  id: __t.u64(),
+export default __t.row({
+  id: __t.u64().primaryKey(),
   owner: __t.identity(),
-  clientTs: __t.string(),
+  clientTs: __t.string().name("client_ts"),
   event: __t.string(),
   detail: __t.string(),
 });
-export type AuthLog = __Infer<typeof AuthLog>;
-
-export const TimerCounter = __t.object("TimerCounter", {
-  id: __t.u64(),
-  owner: __t.identity(),
-  label: __t.string(),
-  currentCount: __t.i32(),
-  remainingTimeSeconds: __t.u32(),
-  timerState: __t.string(),
-});
-export type TimerCounter = __Infer<typeof TimerCounter>;
-

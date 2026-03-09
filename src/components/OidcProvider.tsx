@@ -29,15 +29,21 @@ export default function OidcProvider({
       automaticSilentRenew={true}
       stateStore={localStorageStore}
       userStore={localStorageStore}
-      onSigninCallback={() => {
+      onSigninCallback={(user) => {
+        // Clean up ?code=&state= from the URL after the OIDC code exchange.
         window.history.replaceState(
           {},
           document.title,
           window.location.pathname,
         );
+        const expiresIn = (user as { expires_in?: number } | null)?.expires_in;
+        console.log(
+          `[OidcProvider] SIGNIN_CALLBACK_COMPLETE expires_in=${expiresIn ?? "?"
+          }s`,
+        );
       }}
       onRemoveUser={() => {
-        console.log("User session removed (logout or expiry)");
+        console.log("[OidcProvider] USER_REMOVED — session removed (logout or expiry)");
       }}
     >
       {children}

@@ -8,14 +8,11 @@ import { type Infer as __Infer } from "spacetimedb";
 // Import all reducer arg schemas
 import CreateTimerCounterReducer from "../create_timer_counter_reducer";
 import DeleteTimerCounterReducer from "../delete_timer_counter_reducer";
+import InsertAuthLogReducer from "../insert_auth_log_reducer";
 import UpdateTimerCounterReducer from "../update_timer_counter_reducer";
 
-export type CreateTimerCounterParams = __Infer<
-  typeof CreateTimerCounterReducer
->;
-export type DeleteTimerCounterParams = __Infer<
-  typeof DeleteTimerCounterReducer
->;
-export type UpdateTimerCounterParams = __Infer<
-  typeof UpdateTimerCounterReducer
->;
+export type CreateTimerCounterParams = __Infer<typeof CreateTimerCounterReducer>;
+export type DeleteTimerCounterParams = __Infer<typeof DeleteTimerCounterReducer>;
+export type InsertAuthLogParams = __Infer<typeof InsertAuthLogReducer>;
+export type UpdateTimerCounterParams = __Infer<typeof UpdateTimerCounterReducer>;
+

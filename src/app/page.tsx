@@ -6,6 +6,7 @@ import TimerSkeletonGrid from "@/components/organism/timer-grid/TimerSkeletonGri
 import { TimerListContext } from "@/lib/timerListContext";
 import AuthGate from "@/components/organism/AuthGate";
 import { SyncBridge } from "@/components/SyncBridge";
+import { AuthLogger } from "@/components/AuthLogger";
 
 function PageContent() {
   const snapshot = TimerListContext.useSelector((s) => s);
@@ -35,11 +36,17 @@ function PageContent() {
 
 export default function Home() {
   return (
-    <AuthGate>
-      <TimerListContext.Provider>
-        <SyncBridge />
-        <PageContent />
-      </TimerListContext.Provider>
-    </AuthGate>
+    <>
+      {/* AuthLogger sits outside AuthGate so it captures all auth events,
+          including pre-authentication and renewal failures. It is still
+          inside OidcProvider (via layout.tsx) so useAuth() works. */}
+      <AuthLogger />
+      <AuthGate>
+        <TimerListContext.Provider>
+          <SyncBridge />
+          <PageContent />
+        </TimerListContext.Provider>
+      </AuthGate>
+    </>
   );
 }

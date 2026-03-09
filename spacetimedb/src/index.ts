@@ -15,7 +15,24 @@ const timer_counter = table(
   },
 );
 
-const spacetimedb = schema({ timer_counter });
+// Auth event log — written by the client on every significant auth state
+// change. Readable via `spacetime sql timer-counter-6b3bt "SELECT * FROM
+// auth_log ORDER BY id DESC LIMIT 100"`.
+const auth_log = table(
+  { name: "auth_log", public: true },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    owner: t.identity(),
+    // ISO-8601 timestamp recorded on the client (e.g. "2026-03-09T12:34:56.789Z")
+    client_ts: t.string(),
+    // Short event name, e.g. "USER_LOADED", "SILENT_RENEW_ERROR", "TOKEN_EXPIRING"
+    event: t.string(),
+    // Additional detail (error message, token expiry, navigator state, etc.)
+    detail: t.string(),
+  },
+);
+
+const spacetimedb = schema({ timer_counter, auth_log });
 export default spacetimedb;
 
 export const create_timer_counter = spacetimedb.reducer(
@@ -63,5 +80,23 @@ export const delete_timer_counter = spacetimedb.reducer(
     if (!timer.owner.isEqual(ctx.sender))
       throw new SenderError("Not authorized");
     ctx.db.timer_counter.id.delete(id);
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH LOGGING REDUCER
+// Called from the client to record auth lifecycle events for debugging.
+// Anyone who can authenticate can write their own log entries (owner = sender).
+// ─────────────────────────────────────────────────────────────────────────────
+export const insert_auth_log = spacetimedb.reducer(
+  { client_ts: t.string(), event: t.string(), detail: t.string() },
+  (ctx, { client_ts, event, detail }) => {
+    ctx.db.auth_log.insert({
+      id: 0n,
+      owner: ctx.sender,
+      client_ts,
+      event,
+      detail,
+    });
   },
 );
