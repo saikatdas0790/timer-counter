@@ -15,16 +15,22 @@ export default function TimersGrid({ timers, onNewTimerCreated }: Props) {
     <div
       style={{
         display: "grid",
-        gap: "1rem",
+        columnGap: "1rem",
+        // rowGap is the gap between every sub-row across ALL cards — must match
+        // the old gap-8 (2 rem) spacing between sections inside each card.
+        rowGap: "2rem",
         gridTemplateColumns: "repeat(auto-fill, minmax(24rem, 1fr))",
         justifyItems: "center",
-        alignItems: "stretch",
       }}
     >
       {timers.map((timer) => (
         <TimerCounterComponent key={timer.id} timer={timer} />
       ))}
-      <AddNewTimerCounter onNewTimer={onNewTimerCreated} />
+      {/* Wrap in a row-span-8 container so the Add button participates in
+          the same 8-track subgrid layout as the timer cards. */}
+      <div className="row-span-8 w-96">
+        <AddNewTimerCounter onNewTimer={onNewTimerCreated} />
+      </div>
     </div>
   );
 }
