@@ -10,6 +10,31 @@ import TimerSkeletonGrid from "@/components/organism/timer-grid/TimerSkeletonGri
 // be ready yet — starting early gives the library more time to retry.
 const PROACTIVE_RENEW_THRESHOLD_SECONDS = 90;
 
+// Errors that indicate the IdP session / refresh token is gone and no amount
+// of silent retrying will help. We must stop and let the user sign in manually.
+function isTerminalError(err: Error): boolean {
+    const msg = err.message ?? "";
+    return (
+        msg.includes("End-User authentication is required") ||
+        msg.includes("IFrame timed out") ||
+        msg.includes("login_required") ||
+        msg.includes("interaction_required") ||
+        msg.includes("consent_required")
+    );
+}
+
+// Errors that are worth retrying — transient network failures right after
+// a device wakes from sleep.
+function isNetworkError(err: Error): boolean {
+    const msg = err.message ?? "";
+    return (
+        msg.includes("Failed to fetch") ||
+        msg.includes("NetworkError") ||
+        msg.includes("Load failed") ||
+        msg.includes("disposed window")
+    );
+}
+
 export default function AuthGate({ children }: { children: React.ReactNode }) {
     const auth = useAuth();
     const latestAuthRef = useRef(auth);
@@ -33,15 +58,29 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         // auth.signinSilent is stable (bound to UserManager); omitting from deps is safe.
     }, [auth.isLoading, auth.isAuthenticated, auth.activeNavigator, auth.error]);
 
-    // Recovery with retry-and-backoff when automatic silent renewal fails.
-    // The most common cause is a transient network error ("TypeError: Failed to
-    // fetch") immediately after a device wakes from sleep. We retry at 2 s,
-    // 5 s, and 10 s before giving up — the network is usually ready within a
-    // few seconds of tab visibility being restored.
+    // Recovery with retry-and-backoff when automatic silent renewal fails with
+    // a transient network error (the most common cause: device woke from sleep,
+    // network not yet ready). We retry at 2 s, 5 s, and 10 s then give up.
+    //
+    // We do NOT retry terminal IdP errors ("End-User authentication is required",
+    // "IFrame timed out", etc.) — those mean the refresh token / IdP session is
+    // gone and only a manual sign-in can fix them. Retrying them creates an
+    // iframe-timeout storm (as seen in the logs).
     useEffect(() => {
         if (!auth.error || !auth.isAuthenticated) return;
 
-        console.error("[AuthGate] Auth renewal error — starting recovery:", auth.error);
+        // Bail out immediately for terminal errors — no point retrying.
+        if (isTerminalError(auth.error)) {
+            console.warn("[AuthGate] Terminal auth error — not retrying:", auth.error.message);
+            return;
+        }
+
+        if (!isNetworkError(auth.error)) {
+            console.warn("[AuthGate] Unrecognised auth error — not retrying:", auth.error.message);
+            return;
+        }
+
+        console.error("[AuthGate] Transient network error during renewal — will retry:", auth.error.message);
 
         const delays = [2_000, 5_000, 10_000];
         const timers: ReturnType<typeof setTimeout>[] = [];
@@ -50,19 +89,27 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         for (const delay of delays) {
             const t = setTimeout(() => {
                 if (recovered) return;
-                // Stop retrying if there's no longer an active error or the
-                // user has since been signed out.
                 const current = latestAuthRef.current;
+                // Stop if no longer in an error state or already signed out.
                 if (!current.error || !current.isAuthenticated) {
                     recovered = true;
                     return;
                 }
+                // Stop if the error has become terminal during the backoff.
+                if (isTerminalError(current.error)) {
+                    recovered = true;
+                    console.warn("[AuthGate] Error became terminal during backoff — stopping retries.");
+                    return;
+                }
+                // Don't start a second concurrent signinSilent.
+                if (current.activeNavigator) return;
+
                 console.log(`[AuthGate] Recovery attempt after ${delay}ms…`);
                 current.signinSilent().then(() => {
                     recovered = true;
                     console.log("[AuthGate] Recovery succeeded.");
                 }).catch((err) => {
-                    console.warn(`[AuthGate] Recovery attempt failed:`, err);
+                    console.warn("[AuthGate] Recovery attempt failed:", err);
                 });
             }, delay);
             timers.push(t);
@@ -74,14 +121,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     }, [auth.error]);
 
     // Proactive renewal on tab-visibility restore.
-    // When the tab becomes visible with a short-lived token we call signinSilent
-    // immediately — before the oidc-client-ts automatic timer fires — giving it
-    // the best chance of succeeding while the network wakes up.
+    // When the tab becomes visible with a short-lived (or already expired) token,
+    // call signinSilent immediately — before the oidc-client-ts automatic timer
+    // fires — giving it the best chance while the network wakes up.
+    // Guards: skip if a renewal is already in flight (activeNavigator is set),
+    // and skip if the current error is terminal (requires manual sign-in).
     useEffect(() => {
         const onVisible = () => {
             if (document.visibilityState !== "visible") return;
             const current = latestAuthRef.current;
-            if (!current.isAuthenticated || current.activeNavigator) return;
+            if (!current.isAuthenticated) return;
+            if (current.activeNavigator) return;  // already in flight
+            if (current.error && isTerminalError(current.error)) return;  // needs manual login
             const expiresIn = current.user?.expires_in ?? Infinity;
             if (expiresIn < PROACTIVE_RENEW_THRESHOLD_SECONDS) {
                 console.log(

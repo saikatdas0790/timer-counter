@@ -96,9 +96,14 @@ export function AuthLogger() {
 
         if (curr !== prev) {
             if (curr) {
+                const terminal =
+                    curr.message?.includes("End-User authentication is required") ||
+                    curr.message?.includes("IFrame timed out") ||
+                    curr.message?.includes("login_required") ||
+                    curr.message?.includes("interaction_required");
                 logEvent(
                     "AUTH_ERROR",
-                    `${curr.name}: ${curr.message}` +
+                    `[${terminal ? "TERMINAL" : "retriable"}] ${curr.name}: ${curr.message}` +
                     `${latestAuthRef.current.user?.expires_in !== undefined ? ` (expires_in=${latestAuthRef.current.user.expires_in}s)` : ""}`,
                 );
             } else if (prev) {

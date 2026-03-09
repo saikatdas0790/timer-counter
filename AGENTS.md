@@ -61,7 +61,7 @@ spacetimedb/                   # SpacetimeDB server module (spacetime init)
   spacetime.json              # Module config (server: maincloud, database: timer-counter-6b3bt)
   .env.local                  # SpacetimeDB host + DB name (not gitignored in spacetimedb/)
 vitest.config.ts              # Vitest config (jsdom, @/* alias)
-static/                       # Static assets served as-is
+public/static/                # Static assets (icons, audio) served at /static/*
 .devcontainer/                # Dev container config (see Devcontainer section)
 .github/
   workflows/deploy.yml        # CI/CD — builds and deploys to GitHub Pages on push to main
@@ -252,7 +252,7 @@ Browsers throttle background tabs and can suppress `actorRef.subscribe` for up t
 - The runner creates placeholder stubs for the two devcontainer bind-mount sources that don't exist in CI (`~/.ssh/agent.sock` and `~/.config/gh`) before launching the container.
 - **Secrets in CI**: The only secret CI needs is `ANSIBLE_VAULT_PASSWORD` (a GitHub secret). It is injected into the devcontainer via the `env:` block on the `devcontainers/ci` step. `postCreate.sh` detects it, writes `ansible/.vault_pass`, and then runs the exact same `ansible/setup_env.yml` playbook as local. This keeps CI and local behaviour in the same code path — the vault is always the source of truth. Never pass individual secret values (tokens, client secrets, etc.) as separate CI env vars; never write `.env` from outside the devcontainer in workflow steps.
 - Build output (`out/`) is uploaded as a GitHub Pages artifact and deployed via `actions/deploy-pages@v4`.
-- Custom domain: `timer-counter.saikat.dev` (configured via `static/CNAME`). DNS is a proxied Cloudflare CNAME pointing to `saikatdas0790.github.io`.
+- Custom domain: `timer-counter.saikat.dev` (configured via `public/CNAME`). DNS is a proxied Cloudflare CNAME pointing to `saikatdas0790.github.io`.
 - SPA routing: Next.js `output: 'export'` generates static HTML. The `404.html` fallback handles unmatched routes for GitHub Pages.
 
 ---

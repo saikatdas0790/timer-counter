@@ -45,7 +45,7 @@ export default function TimerCounter({ timer }: Props) {
   }, [timer]);
 
   return (
-    <div className="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 flex flex-col justify-between gap-8 duration-500 py-8">
+    <div className="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 flex flex-col gap-8 duration-500 py-8">
       <TimerDisplay timer={timer} />
       {(snapshot.matches("new") || snapshot.matches("timerSet")) && (
         <TimerSelectButtonCluster timer={timer} />
@@ -54,15 +54,19 @@ export default function TimerCounter({ timer }: Props) {
       <Divider />
       <Counter timer={timer} />
       <Divider />
-      <TimerLabel
-        textToDisplay={snapshot.context.timerLabel}
-        onCommit={(value) =>
-          timer.send({
-            type: "TIMER_COUNTER_LABEL_CHANGED",
-            updatedLabel: value,
-          })
-        }
-      />
+      {/* flex-1: label area absorbs all remaining card height so every section
+          above it stays pinned at the same vertical position across cards */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <TimerLabel
+          textToDisplay={snapshot.context.timerLabel}
+          onCommit={(value) =>
+            timer.send({
+              type: "TIMER_COUNTER_LABEL_CHANGED",
+              updatedLabel: value,
+            })
+          }
+        />
+      </div>
       <RemoveTimer
         onClick={() =>
           timer.send({ type: "TIMER_COUNTER_DELETED", timerId: timer.id })
