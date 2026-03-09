@@ -59,9 +59,11 @@ export function AuthLogger() {
 
     // ── Connection lifecycle ────────────────────────────────────────────────────
     // Creates a dedicated (reducer-only) STDB connection whenever the auth token
-    // changes. Mirrors the SyncBridge pattern so the connection is always fresh.
+    // changes. Intentionally does NOT include auth.error in the dep array —
+    // we want the connection to stay alive during a renewal error so that
+    // recovery events (USER_LOADED, AUTH_ERROR_CLEARED) are still captured.
     useEffect(() => {
-        if (!auth.isAuthenticated || auth.error) return;
+        if (!auth.isAuthenticated) return;
 
         const token = auth.user?.access_token;
         if (!token) return;
@@ -78,12 +80,13 @@ export function AuthLogger() {
         return () => {
             logEvent(
                 "LOGGER_DISCONNECTING",
-                "token changed or auth error — tearing down log connection",
+                "token changed or user signed out — tearing down log connection",
             );
             connRef.current = null;
             conn.disconnect();
         };
-    }, [auth.user?.access_token, auth.isAuthenticated, auth.error, logEvent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [auth.user?.access_token, auth.isAuthenticated, logEvent]);
 
     // ── auth.error changes ─────────────────────────────────────────────────────
     const prevErrorRef = useRef<Error | undefined>(undefined);

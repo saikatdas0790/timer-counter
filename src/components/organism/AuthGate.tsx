@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAuth } from "react-oidc-context";
 import TimerSkeletonGrid from "@/components/organism/timer-grid/TimerSkeletonGrid";
 
+// Proactively trigger silent renewal when the tab becomes visible with fewer
+// than this many seconds left on the access token. The automatic renewal fires
+// at ~60 s remaining, but if the browser woke from sleep the network may not
+// be ready yet — starting early gives the library more time to retry.
+const PROACTIVE_RENEW_THRESHOLD_SECONDS = 90;
+
 export default function AuthGate({ children }: { children: React.ReactNode }) {
     const auth = useAuth();
+    const latestAuthRef = useRef(auth);
+    latestAuthRef.current = auth;
 
     // When the library finishes loading but the user isn't signed in, attempt a
     // silent sign-in. For returning users whose access token expired but whose
@@ -25,19 +33,69 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         // auth.signinSilent is stable (bound to UserManager); omitting from deps is safe.
     }, [auth.isLoading, auth.isAuthenticated, auth.activeNavigator, auth.error]);
 
-    // If automatic silent renewal fails, try to recover by attempting silent sign-in.
-    // This handles cases where renewal failed due to temporary network issues.
+    // Recovery with retry-and-backoff when automatic silent renewal fails.
+    // The most common cause is a transient network error ("TypeError: Failed to
+    // fetch") immediately after a device wakes from sleep. We retry at 2 s,
+    // 5 s, and 10 s before giving up — the network is usually ready within a
+    // few seconds of tab visibility being restored.
     useEffect(() => {
-        if (auth.error && auth.isAuthenticated) {
-            console.error("Auth error during renewal:", auth.error);
+        if (!auth.error || !auth.isAuthenticated) return;
 
-            // Attempt silent sign-in to recover
-            auth.signinSilent().catch((err) => {
-                console.error("Silent sign-in recovery failed:", err);
-                // If silent recovery fails, the error banner will show and user can manually sign in
-            });
+        console.error("[AuthGate] Auth renewal error — starting recovery:", auth.error);
+
+        const delays = [2_000, 5_000, 10_000];
+        const timers: ReturnType<typeof setTimeout>[] = [];
+        let recovered = false;
+
+        for (const delay of delays) {
+            const t = setTimeout(() => {
+                if (recovered) return;
+                // Stop retrying if there's no longer an active error or the
+                // user has since been signed out.
+                const current = latestAuthRef.current;
+                if (!current.error || !current.isAuthenticated) {
+                    recovered = true;
+                    return;
+                }
+                console.log(`[AuthGate] Recovery attempt after ${delay}ms…`);
+                current.signinSilent().then(() => {
+                    recovered = true;
+                    console.log("[AuthGate] Recovery succeeded.");
+                }).catch((err) => {
+                    console.warn(`[AuthGate] Recovery attempt failed:`, err);
+                });
+            }, delay);
+            timers.push(t);
         }
-    }, [auth.error, auth.isAuthenticated]);
+
+        return () => timers.forEach(clearTimeout);
+    // Re-run only when auth.error transitions from falsy → truthy (new error).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [auth.error]);
+
+    // Proactive renewal on tab-visibility restore.
+    // When the tab becomes visible with a short-lived token we call signinSilent
+    // immediately — before the oidc-client-ts automatic timer fires — giving it
+    // the best chance of succeeding while the network wakes up.
+    useEffect(() => {
+        const onVisible = () => {
+            if (document.visibilityState !== "visible") return;
+            const current = latestAuthRef.current;
+            if (!current.isAuthenticated || current.activeNavigator) return;
+            const expiresIn = current.user?.expires_in ?? Infinity;
+            if (expiresIn < PROACTIVE_RENEW_THRESHOLD_SECONDS) {
+                console.log(
+                    `[AuthGate] Tab visible with ${expiresIn}s left — ` +
+                    `proactively calling signinSilent()`,
+                );
+                current.signinSilent().catch((err) => {
+                    console.warn("[AuthGate] Proactive renewal failed:", err);
+                });
+            }
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        return () => document.removeEventListener("visibilitychange", onVisible);
+    }, []);
 
     // Show skeleton while the library initialises or while silent sign-in is in flight.
     if (auth.isLoading || auth.activeNavigator === "signinSilent") {
