@@ -17,18 +17,17 @@ export default function TimerLabel({ textToDisplay, onCommit }: Props) {
   }, [textToDisplay]);
 
   return (
-    <input
-      type="text"
-      className="block w-3/4 mx-auto outline-none text-2xl text-purple-300 text-center border-b border-transparent bg-transparent transition-colors duration-300 focus:border-purple-600 focus:ring-0"
-      maxLength={20}
+    <textarea
+      className="block w-11/12 mx-auto outline-none leading-relaxed text-purple-300 border border-purple-900/40 rounded-lg bg-transparent px-3 py-2 transition-colors duration-300 focus:border-purple-500/70 focus:ring-0 resize-none placeholder:text-purple-800/80 min-h-18 text-xl field-sizing-content"
+      placeholder="Add notes…"
       value={localValue}
-      onChange={(e) => setLocalValue((e.target as HTMLInputElement).value)}
+      onChange={(e) => setLocalValue(e.target.value)}
       onFocus={() => {
         isFocusedRef.current = true;
       }}
       onBlur={(e) => {
         isFocusedRef.current = false;
-        onCommit((e.target as HTMLInputElement).value);
+        onCommit(e.target.value);
       }}
     />
   );

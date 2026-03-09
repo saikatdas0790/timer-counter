@@ -29,7 +29,14 @@
     "GIT_WORK_TREE": "/workspaces/timer-counter"
   },
   // Run post-create setup script
-  "postCreateCommand": ".devcontainer/postCreate.sh"
+  "postCreateCommand": ".devcontainer/postCreate.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  }
   // Use 'forwardPorts' to make a list of ports inside the container available locally.
   // "forwardPorts": [],
   // Configure tool-specific properties.
