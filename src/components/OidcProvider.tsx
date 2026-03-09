@@ -25,7 +25,7 @@ export default function OidcProvider({
       authority="https://auth.spacetimedb.com/oidc"
       client_id={process.env.NEXT_PUBLIC_SPACETIMEDB_AUTH_CLIENT_ID!}
       redirect_uri={redirectUri}
-      scope="openid profile email"
+      scope="openid profile email offline_access"
       automaticSilentRenew={true}
       stateStore={localStorageStore}
       userStore={localStorageStore}
@@ -38,6 +38,9 @@ export default function OidcProvider({
       }}
       onRemoveUser={() => {
         console.log("User session removed (logout or expiry)");
+      }}
+      onSilentRenewError={(error) => {
+        console.error("Silent token renewal failed:", error);
       }}
     >
       {children}
