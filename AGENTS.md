@@ -43,13 +43,18 @@ src/
     ServiceWorkerRegistration.tsx  # "use client" headless component that registers the SW on mount
   lib/
     timerListMachine.ts       # Root XState machine (timer list + localStorage + STDB events)
-    timerListMachine.test.ts  # Unit tests for timerListMachine (43 tests)
+    timerListMachine.test.ts  # Unit tests for timerListMachine (55 tests)
     timerListContext.tsx       # createActorContext wrapper for timerListMachine
     spacetimedb.ts            # DbConnection factory (createDbConnection)
     registerServiceWorker.ts  # Service worker registration (called from ServiceWorkerRegistration)
     useWakeLock.ts            # Hook: requests screen wake lock while a timer is running
     useWakeLock.test.ts       # Unit tests for useWakeLock (8 tests)
     pwa.test.ts               # Unit tests for manifest + SW registration (14 tests)
+  components/
+    molecule/
+      timer/
+        timer-counter/
+          TimerCounter.test.ts  # Unit tests for timerCounterMachine (12 tests)
     module_bindings/          # Generated TS bindings (spacetime:generate — do not edit)
 public/                        # Served at site root (Next.js static assets)
   manifest.json               # PWA web app manifest
@@ -130,6 +135,7 @@ All non-trivial state lives in XState v5 machines. Conventions:
 - `sendParent` is still available; accepts a static event object or a callback `({ context, event }) => event`.
 - All `send()` calls use the **object form**: `send({ type: "EVENT" })` — the string shorthand `send("EVENT")` was removed in v5.
 - Child actors are spawned by string src name `spawn('actorName', { id: 'actorId', input: { ... } })` inside `assign` callbacks. The actor must be registered in `setup({ actors: { actorName: logic } })`. Direct logic reference `spawn(logic, { id })` is not used because it does not support the `id` option in TypeScript. The `.withContext()` API was removed in v5.
+- **State restoration via `input` + `always`**: When a spawned actor needs to start in a non-default state (e.g. restoring `timerState: "running"` from localStorage or STDB), pass the state as an `input` field and use `always` transitions in the initial state to immediately transition to the correct state. Do NOT use a post-spawn `send()` — events sent to a newly-spawned actor before its event loop is ready are silently dropped. The `timerCounterMachine` uses this pattern: `input.timerState` is stored in `context._initialTimerState`, and `always` transitions in the `"new"` state fire immediately and clear `_initialTimerState` so that returning to `"new"` (e.g. via reset) does not re-trigger the restore.
 - `useMachine` and `useSelector` come from `@xstate/react`. `useSelector(actorRef, selector)` subscribes a component to an actor's state.
 - `createActorContext(machine)` from `@xstate/react` creates a React context with a `Provider`, `useSelector`, and `useActorRef` — used in `src/lib/timerListContext.tsx` for the root machine.
 - `InterpreterFrom<T>` → use `Actor<T>` for the actor type; `StateFrom<T>` → `SnapshotFrom<T>`.
@@ -181,8 +187,8 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 
 - Server module: `spacetimedb/` (TypeScript, publishes to `maincloud.spacetimedb.com`)
 - Database: `timer-counter-6b3bt` on `maincloud`
-- Table: `timer_counter` — `id (u64 autoInc PK)`, `owner (identity)`, `label (string)`, `current_count (i32)`, `remaining_time_seconds (u32)`, `public: true`
-- Reducers: `create_timer_counter({ label })`, `update_timer_counter({ id, label, current_count, remaining_time_seconds })`, `delete_timer_counter({ id })` — all enforce `ctx.sender === row.owner`
+- Table: `timer_counter` — `id (u64 autoInc PK)`, `owner (identity)`, `label (string)`, `current_count (i32)`, `remaining_time_seconds (u32)`, `timer_state (string)`, `public: true`
+- Reducers: `create_timer_counter({ label })`, `update_timer_counter({ id, label, current_count, remaining_time_seconds, timer_state })`, `delete_timer_counter({ id })` — all enforce `ctx.sender === row.owner`
 - Generated bindings: `src/lib/module_bindings/` (client app) and `spacetimedb/src/module_bindings/` (server) — do not edit
 - To regenerate bindings after publishing module changes: `cd spacetimedb && npm run spacetime:generate`
 - To publish module: `cd spacetimedb && npm run spacetime:publish`
@@ -219,7 +225,7 @@ The `SyncBridge` effect checks `auth.isAuthenticated` and `auth.error` before at
 
 - `stdbIdMap: Record<string, bigint>` — maps actor ID → STDB row ID
 - Actors spawned from STDB data use IDs like `stdb-${row.id}`; locally-created actors use `${Date.now()}`
-- `STDB_SYNC_APPLIED` replaces the entire timer list (STDB is authoritative)
+- `STDB_SYNC_APPLIED` updates existing actors in-place (preserving the user's established timer order from localStorage), then appends any new STDB rows as fresh actors. Actors no longer in STDB are dropped. STDB is still authoritative for data; localStorage order is preserved for UX.
 - `STDB_TIMER_UPDATED` dispatches `TIMER_STATE_SYNCED_FROM_REMOTE` to the child actor; `syncFromRemote` updates context but does NOT write to localStorage (keeps the echo loop broken)
 
 **Background-tab flush (`forceFlushRunningTimers`):**

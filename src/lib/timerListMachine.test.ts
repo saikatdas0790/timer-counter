@@ -718,8 +718,7 @@ describe("timerListMachine", () => {
       ],
     });
 
-    // Initial state should be timerSet
-    await new Promise((r) => setTimeout(r, 10));
+    // Initial state should be timerSet (via always-transition from input)
     expect(
       actor.getSnapshot().context.timers[0].getSnapshot().matches("timerSet"),
     ).toBe(true);
@@ -761,7 +760,10 @@ describe("timerListMachine", () => {
       ],
     });
 
-    await new Promise((r) => setTimeout(r, 10));
+    // Initial state should be running (via always-transition from input — no wait needed)
+    expect(
+      actor.getSnapshot().context.timers[0].getSnapshot().matches("running"),
+    ).toBe(true);
 
     // Device A paused
     actor.send({
@@ -911,7 +913,6 @@ describe("timerListMachine", () => {
       },
     });
 
-    await new Promise((r) => setTimeout(r, 10));
     // Child must now be in the running state …
     expect(
       actor.getSnapshot().context.timers[0].getSnapshot().matches("running"),
@@ -920,6 +921,110 @@ describe("timerListMachine", () => {
     expect(localStorage.getItem("timerCounterSavedState")).toBe(
       storedAfterSync,
     );
+    actor.stop();
+  });
+
+  // ── Cross-device sync (mobile / new-device) ───────────────────────────────
+  // The canonical sync regression: Device A has a running timer. Device B
+  // (mobile, fresh session) opens the app. STDB_SYNC_APPLIED fires with the
+  // STDB rows — the new actors must restore to Device A's state immediately.
+  // Previously broken because newly spawned actors dropped post-spawn send().
+
+  it("STDB_SYNC_APPLIED on fresh session restores 'running' state (cross-device sync)", async () => {
+    const actor = await startReadyMachine([]); // no localStorage (fresh/new device)
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 50n,
+          label: "Work",
+          currentCount: 1,
+          remainingTimeSeconds: 891,
+          timerState: "running",
+        },
+      ],
+    });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("running")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(891);
+    expect(timerRef.getSnapshot().context.currentCount).toBe(1);
+    actor.stop();
+  });
+
+  it("STDB_SYNC_APPLIED on fresh session restores 'paused' state", async () => {
+    const actor = await startReadyMachine([]);
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 51n,
+          label: "Break",
+          currentCount: 0,
+          remainingTimeSeconds: 451,
+          timerState: "paused",
+        },
+      ],
+    });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("paused")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(451);
+    actor.stop();
+  });
+
+  it("STDB_SYNC_APPLIED on fresh session restores 'timerSet' state", async () => {
+    const actor = await startReadyMachine([]);
+    actor.send({
+      type: "STDB_SYNC_APPLIED",
+      rows: [
+        {
+          id: 52n,
+          label: "Pomodoro",
+          currentCount: 0,
+          remainingTimeSeconds: 1800,
+          timerState: "timerSet",
+        },
+      ],
+    });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("timerSet")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(1800);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_INSERTED restores 'running' state for a remote insert", async () => {
+    const actor = await startReadyMachine([]);
+    actor.send({
+      type: "STDB_TIMER_INSERTED",
+      row: {
+        id: 53n,
+        label: "Remote Running",
+        currentCount: 2,
+        remainingTimeSeconds: 735,
+        timerState: "running",
+      },
+    });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("running")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(735);
+    expect(timerRef.getSnapshot().context.currentCount).toBe(2);
+    actor.stop();
+  });
+
+  it("STDB_TIMER_INSERTED restores 'paused' state for a remote insert", async () => {
+    const actor = await startReadyMachine([]);
+    actor.send({
+      type: "STDB_TIMER_INSERTED",
+      row: {
+        id: 54n,
+        label: "Remote Paused",
+        currentCount: 3,
+        remainingTimeSeconds: 420,
+        timerState: "paused",
+      },
+    });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("paused")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(420);
     actor.stop();
   });
 

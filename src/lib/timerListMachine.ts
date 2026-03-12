@@ -165,20 +165,18 @@ const timerListMachine = setup({
               .filter((row) => !existingMap.has(`stdb-${row.id}`))
               .map((row) => {
                 const actorId = `stdb-${row.id}`;
+                // Pass timerState via input so the always-transitions in the
+                // "new" state restore it immediately on spawn — avoids the
+                // spawn+send timing race where a post-spawn send() can be
+                // dropped before the actor's event loop is ready.
                 const timer = spawn("timerCounter", {
                   id: actorId,
                   input: {
                     currentCount: row.currentCount,
                     remainingTimeInSeconds: row.remainingTimeSeconds,
                     timerLabel: row.label,
+                    timerState: row.timerState ?? "new",
                   },
-                });
-                timer.send({
-                  type: "TIMER_STATE_SYNCED_FROM_REMOTE",
-                  timerState: row.timerState ?? "new",
-                  timerLabel: row.label,
-                  currentCount: row.currentCount,
-                  remainingTimeInSeconds: row.remainingTimeSeconds,
                 });
                 return timer;
               });
@@ -215,20 +213,17 @@ const timerListMachine = setup({
           actions: assign(({ context, event, spawn }) => {
             const actorId = `stdb-${event.row.id}`;
             if (context.timers.some((t) => t.id === actorId)) return {};
+            // Pass timerState via input so the always-transitions in the
+            // "new" state restore it immediately on spawn (no post-spawn
+            // send() that could be dropped before the actor is ready).
             const timer = spawn("timerCounter", {
               id: actorId,
               input: {
                 currentCount: event.row.currentCount,
                 remainingTimeInSeconds: event.row.remainingTimeSeconds,
                 timerLabel: event.row.label,
+                timerState: event.row.timerState ?? "new",
               },
-            });
-            timer.send({
-              type: "TIMER_STATE_SYNCED_FROM_REMOTE",
-              timerState: event.row.timerState ?? "new",
-              timerLabel: event.row.label,
-              currentCount: event.row.currentCount,
-              remainingTimeInSeconds: event.row.remainingTimeSeconds,
             });
             return {
               timers: [...context.timers, timer],
