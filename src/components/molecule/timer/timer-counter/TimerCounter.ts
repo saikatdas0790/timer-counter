@@ -31,6 +31,10 @@ const timerCounterMachine = setup({
       remainingTimeInSeconds: number;
       timerLabel: string;
       currentCount: number;
+      // Ephemeral: set from input on spawn, cleared after the first
+      // always-transition away from "new" so that COUNTDOWN_TIMER_RESET
+      // (which returns to "new") doesn't trigger the restore a second time.
+      _initialTimerState: string;
     },
     events: {} as
       | { type: "TIMER_INTERVAL_SET"; intervalValue: TimerInterval }
@@ -52,6 +56,9 @@ const timerCounterMachine = setup({
       remainingTimeInSeconds?: number;
       timerLabel?: string;
       currentCount?: number;
+      // Persist and restore the XState state value so a page reload caused by
+      // an auth redirect returns the timer to its exact state.
+      timerState?: string;
     },
   },
   actions: {
@@ -122,6 +129,7 @@ const timerCounterMachine = setup({
     remainingTimeInSeconds: input?.remainingTimeInSeconds ?? 0,
     timerLabel: input?.timerLabel ?? "New Timer Counter",
     currentCount: input?.currentCount ?? 0,
+    _initialTimerState: input?.timerState ?? "new",
   }),
   on: {
     TIMER_STATE_SYNCED_FROM_REMOTE: [
@@ -164,6 +172,34 @@ const timerCounterMachine = setup({
   initial: "new",
   states: {
     new: {
+      // If this actor was spawned with a non-default timerState (from
+      // localStorage or STDB), transition away immediately using always.
+      // This avoids the spawn+send timing race where an event sent to a
+      // newly-spawned actor can be dropped before its event loop starts.
+      // _initialTimerState is cleared after the transition so navigating
+      // back to "new" via COUNTDOWN_TIMER_RESET doesn't re-trigger it.
+      always: [
+        {
+          guard: ({ context }) => context._initialTimerState === "running",
+          target: "running",
+          actions: assign({ _initialTimerState: () => "new" }),
+        },
+        {
+          guard: ({ context }) => context._initialTimerState === "paused",
+          target: "paused",
+          actions: assign({ _initialTimerState: () => "new" }),
+        },
+        {
+          guard: ({ context }) => context._initialTimerState === "timerSet",
+          target: "timerSet",
+          actions: assign({ _initialTimerState: () => "new" }),
+        },
+        {
+          guard: ({ context }) => context._initialTimerState === "finished",
+          target: "finished",
+          actions: assign({ _initialTimerState: () => "new" }),
+        },
+      ],
       on: {
         TIMER_INTERVAL_SET: {
           actions: ["setTimerCountdown", "syncTimerState"],

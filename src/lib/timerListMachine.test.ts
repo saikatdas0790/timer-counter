@@ -922,4 +922,129 @@ describe("timerListMachine", () => {
     );
     actor.stop();
   });
+
+  // ── Auth redirect state restore ──────────────────────────────────────────
+  // After an auth-redirect page reload, timerListMachine loads timers from
+  // localStorage and passes timerState via input to the spawned child actor.
+  // The child uses `always` transitions in "new" to restore immediately.
+  // These tests verify the round-trip: run → save → reload → correct state.
+
+  it("restores timerState: 'running' from localStorage on load", async () => {
+    const saved = [
+      {
+        id: "run-1",
+        timerLabel: "Work",
+        currentCount: 1,
+        remainingTimeInSeconds: 891,
+        timerState: "running",
+      },
+    ];
+    const actor = await startReadyMachine(saved);
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("running")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(891);
+    actor.stop();
+  });
+
+  it("restores timerState: 'paused' from localStorage on load", async () => {
+    const saved = [
+      {
+        id: "pause-1",
+        timerLabel: "Break",
+        currentCount: 0,
+        remainingTimeInSeconds: 451,
+        timerState: "paused",
+      },
+    ];
+    const actor = await startReadyMachine(saved);
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("paused")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(451);
+    actor.stop();
+  });
+
+  it("restores timerState: 'timerSet' from localStorage on load", async () => {
+    const saved = [
+      {
+        id: "set-1",
+        timerLabel: "Timer",
+        currentCount: 0,
+        remainingTimeInSeconds: 1800,
+        timerState: "timerSet",
+      },
+    ];
+    const actor = await startReadyMachine(saved);
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("timerSet")).toBe(true);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(1800);
+    actor.stop();
+  });
+
+  it("restores timerState: 'finished' from localStorage on load", async () => {
+    const saved = [
+      {
+        id: "fin-1",
+        timerLabel: "Done",
+        currentCount: 5,
+        remainingTimeInSeconds: 0,
+        timerState: "finished",
+      },
+    ];
+    const actor = await startReadyMachine(saved);
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().matches("finished")).toBe(true);
+    expect(timerRef.getSnapshot().context.currentCount).toBe(5);
+    actor.stop();
+  });
+
+  it("restores remainingTimeInSeconds from localStorage (not reset to 0)", async () => {
+    // Regression: a previous bug hardcoded remainingTimeInSeconds: 0 in
+    // loadStateFromLocalDB, discarding the saved value on every page load.
+    const saved = [
+      {
+        id: "rem-1",
+        timerLabel: "Focus",
+        currentCount: 0,
+        remainingTimeInSeconds: 1234,
+        timerState: "paused",
+      },
+    ];
+    const actor = await startReadyMachine(saved);
+    const timerRef = actor.getSnapshot().context.timers[0];
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(1234);
+    actor.stop();
+  });
+
+  it("TIMER_COUNTER_STATE_CHANGED persists timerState 'running' to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[0] }); // timerSet
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // running
+    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // 899s
+
+    const stored = JSON.parse(
+      localStorage.getItem("timerCounterSavedState") ?? "[]",
+    ) as Array<{ timerState: string; remainingTimeInSeconds: number }>;
+    expect(stored[0].timerState).toBe("running");
+    expect(stored[0].remainingTimeInSeconds).toBe(899);
+    actor.stop();
+  });
+
+  it("TIMER_COUNTER_STATE_CHANGED persists timerState 'paused' to localStorage", async () => {
+    const actor = await startReadyMachine();
+    actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
+    const timerRef = actor.getSnapshot().context.timers[0];
+    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[0] }); // timerSet
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // running
+    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 5 }); // 895s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // paused
+
+    const stored = JSON.parse(
+      localStorage.getItem("timerCounterSavedState") ?? "[]",
+    ) as Array<{ timerState: string; remainingTimeInSeconds: number }>;
+    expect(stored[0].timerState).toBe("paused");
+    expect(stored[0].remainingTimeInSeconds).toBe(895);
+    actor.stop();
+  });
 });

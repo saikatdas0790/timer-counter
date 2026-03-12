@@ -6,6 +6,7 @@ type TimerSavedContext = {
   remainingTimeInSeconds: number;
   timerLabel: string;
   currentCount: number;
+  timerState?: string;
 };
 
 export type StdbTimerRow = {
@@ -58,16 +59,23 @@ const timerListMachine = setup({
               event as unknown as { output: { timers: TimerSavedContext[] } }
             ).output;
             return {
-              timers: output.timers.map((t) =>
-                spawn("timerCounter", {
+              timers: output.timers.map((t) => {
+                const timer = spawn("timerCounter", {
                   id: `${t.id}`,
                   input: {
                     currentCount: t.currentCount,
-                    remainingTimeInSeconds: 0,
+                    remainingTimeInSeconds: t.remainingTimeInSeconds,
                     timerLabel: t.timerLabel,
+                    // timerState is read by the timerCounterMachine via
+                    // always-transitions in the "new" state so the timer
+                    // resumes its exact state after a page reload / auth
+                    // redirect without needing a post-spawn send() that
+                    // could be dropped before the actor starts processing.
+                    timerState: t.timerState,
                   },
-                }),
-              ),
+                });
+                return timer;
+              }),
             };
           }),
         },
@@ -97,9 +105,18 @@ const timerListMachine = setup({
           actions: ({ context }) => {
             const allTimersContext = [];
             for (const timerRef of context.timers) {
-              const timerContext = timerRef.getSnapshot()?.context;
+              const snap = timerRef.getSnapshot();
+              const timerContext = snap?.context;
               if (timerContext) {
-                allTimersContext.push({ id: timerRef.id, ...timerContext });
+                allTimersContext.push({
+                  id: timerRef.id,
+                  ...timerContext,
+                  // Persist the XState state value ("running", "paused", etc.)
+                  // so that a page reload (e.g. from auth redirect) can
+                  // restore the timer to its exact state without waiting for
+                  // STDB to confirm it.
+                  timerState: (snap?.value as string) ?? "new",
+                });
               }
             }
             localStorage.setItem(
@@ -117,39 +134,80 @@ const timerListMachine = setup({
           }),
         },
         STDB_SYNC_APPLIED: {
-          actions: assign(({ event, spawn }) => {
-            const timers = event.rows.map((row) => {
-              const timer = spawn("timerCounter", {
-                id: `stdb-${row.id}`,
-                input: {
+          actions: assign(({ context, event, spawn }) => {
+            const rowMap = new Map<string, StdbTimerRow>(
+              event.rows.map((r) => [`stdb-${r.id}`, r]),
+            );
+            const existingMap = new Map(context.timers.map((t) => [t.id, t]));
+
+            // Update actors that already exist locally — this preserves the
+            // user's established timer order (from localStorage) instead of
+            // replacing the array with whatever order STDB iter() returns.
+            for (const [actorId, row] of rowMap) {
+              const existing = existingMap.get(actorId);
+              if (existing) {
+                existing.send({
+                  type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+                  timerState: row.timerState ?? "new",
+                  timerLabel: row.label,
                   currentCount: row.currentCount,
                   remainingTimeInSeconds: row.remainingTimeSeconds,
+                });
+              }
+            }
+
+            // Timers that exist in STDB, kept in their current (user) order.
+            const kept = context.timers.filter((t) => rowMap.has(t.id));
+
+            // Timers that are new in STDB (no local actor yet) — appended in
+            // the order they appear in the STDB response.
+            const added = event.rows
+              .filter((row) => !existingMap.has(`stdb-${row.id}`))
+              .map((row) => {
+                const actorId = `stdb-${row.id}`;
+                const timer = spawn("timerCounter", {
+                  id: actorId,
+                  input: {
+                    currentCount: row.currentCount,
+                    remainingTimeInSeconds: row.remainingTimeSeconds,
+                    timerLabel: row.label,
+                  },
+                });
+                timer.send({
+                  type: "TIMER_STATE_SYNCED_FROM_REMOTE",
+                  timerState: row.timerState ?? "new",
                   timerLabel: row.label,
-                },
+                  currentCount: row.currentCount,
+                  remainingTimeInSeconds: row.remainingTimeSeconds,
+                });
+                return timer;
               });
-              timer.send({
-                type: "TIMER_STATE_SYNCED_FROM_REMOTE",
-                timerState: row.timerState ?? "new",
-                timerLabel: row.label,
-                currentCount: row.currentCount,
-                remainingTimeInSeconds: row.remainingTimeSeconds,
-              });
-              return timer;
-            });
+
+            const timers = [...kept, ...added];
+
             const stdbIdMap: Record<string, bigint> = {};
             for (const row of event.rows) {
               stdbIdMap[`stdb-${row.id}`] = row.id;
             }
-            const allTimersContext = event.rows.map((row) => ({
-              id: `stdb-${row.id}`,
-              timerLabel: row.label,
-              currentCount: row.currentCount,
-              remainingTimeInSeconds: row.remainingTimeSeconds,
-            }));
+
+            // Persist to localStorage including timerState so that page
+            // reloads can restore running/paused state without waiting for
+            // STDB to reconnect.
+            const allTimersContext = timers.map((t) => {
+              const row = rowMap.get(t.id);
+              return {
+                id: t.id,
+                timerLabel: row?.label ?? "",
+                currentCount: row?.currentCount ?? 0,
+                remainingTimeInSeconds: row?.remainingTimeSeconds ?? 0,
+                timerState: row?.timerState ?? "new",
+              };
+            });
             localStorage.setItem(
               "timerCounterSavedState",
               JSON.stringify(allTimersContext),
             );
+
             return { timers, stdbIdMap };
           }),
         },
