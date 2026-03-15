@@ -26,6 +26,7 @@ export const TimerCounter = __t.object("TimerCounter", {
   currentCount: __t.i32(),
   remainingTimeSeconds: __t.u32(),
   timerState: __t.string(),
+  timerStartedAtMs: __t.u64(),
 });
 export type TimerCounter = __Infer<typeof TimerCounter>;
 

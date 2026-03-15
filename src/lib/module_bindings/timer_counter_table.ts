@@ -17,4 +17,5 @@ export default __t.row({
   currentCount: __t.i32().name("current_count"),
   remainingTimeSeconds: __t.u32().name("remaining_time_seconds"),
   timerState: __t.string().name("timer_state"),
+  timerStartedAtMs: __t.u64().name("timer_started_at_ms"),
 });

@@ -11,7 +11,6 @@ import TimerControllerCluster from "@/components/molecule/timer/TimerControllerC
 import TimerSelectButtonCluster from "@/components/molecule/timer/TimerSelectButtonCluster";
 import TimerLabel from "@/components/atom/input/TimerLabel";
 import RemoveTimer from "@/components/atom/button/RemoveTimer";
-import { useWakeLock } from "@/lib/useWakeLock";
 
 interface Props {
   timer: ActorRefFrom<typeof timerCounterMachine>;
@@ -20,8 +19,6 @@ interface Props {
 export default function TimerCounter({ timer }: Props) {
   const snapshot = useSelector(timer, (s) => s);
   const workerRef = useRef<Worker | null>(null);
-
-  useWakeLock(snapshot.matches("running"));
 
   useEffect(() => {
     workerRef.current = new Worker(
@@ -55,7 +52,7 @@ export default function TimerCounter({ timer }: Props) {
 
   return (
     <div
-      className="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 duration-500 py-8 grid row-span-8 [grid-template-rows:subgrid]"
+      className="border-2 border-blue-100 rounded-lg w-96 shadow shadow-blue-200 duration-500 py-8 grid row-span-8 grid-rows-subgrid"
     >
       {/* row 1 */}
       <TimerDisplay timer={timer} />

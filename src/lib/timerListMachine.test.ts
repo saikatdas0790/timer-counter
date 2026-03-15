@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createActor, waitFor } from "xstate";
 import { timerListMachine } from "./timerListMachine";
 import { timerIntervals } from "@/components/molecule/timer/timer-counter/TimerCounter";
@@ -151,12 +151,14 @@ describe("timerListMachine", () => {
           label: "Remote Timer",
           currentCount: 5,
           remainingTimeSeconds: 0,
+          timerStartedAtMs: 0n,
         },
         {
           id: 2n,
           label: "Another",
           currentCount: 0,
           remainingTimeSeconds: 900,
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -193,7 +195,7 @@ describe("timerListMachine", () => {
     actor.send({
       type: "STDB_SYNC_APPLIED",
       rows: [
-        { id: 3n, label: "Synced", currentCount: 1, remainingTimeSeconds: 0 },
+        { id: 3n, label: "Synced", currentCount: 1, remainingTimeSeconds: 0, timerStartedAtMs: 0n },
       ],
     });
     const stored = JSON.parse(
@@ -216,6 +218,7 @@ describe("timerListMachine", () => {
         label: "Remote",
         currentCount: 2,
         remainingTimeSeconds: 0,
+        timerStartedAtMs: 0n,
       },
     });
     const snap = actor.getSnapshot();
@@ -232,6 +235,7 @@ describe("timerListMachine", () => {
       label: "Dup",
       currentCount: 0,
       remainingTimeSeconds: 0,
+      timerStartedAtMs: 0n,
     };
     actor.send({ type: "STDB_TIMER_INSERTED", row });
     actor.send({ type: "STDB_TIMER_INSERTED", row });
@@ -251,6 +255,7 @@ describe("timerListMachine", () => {
           label: "To Delete",
           currentCount: 0,
           remainingTimeSeconds: 0,
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -282,9 +287,15 @@ describe("timerListMachine", () => {
   });
 
   // ── Time remaining sync ───────────────────────────────────────────────────
-  // Each of these verifies that a time-changing event on a child timer causes
-  // the parent to persist updated remainingTimeInSeconds to localStorage,
-  // which is also what triggers SyncBridge to call updateTimerCounter on STDB.
+  // These verify that play/pause/reset events correctly persist remaining-time
+  // to localStorage. With the wall-clock model:
+  //   - play  → persists _remainingAtStart (frozen at play time) + timerStartedAtMs
+  //   - pause → persists the wall-clock-derived frozen remaining; timerStartedAtMs = 0
+  //   - reset → persists remainingTimeInSeconds = 0
+  // SECONDS_ELAPSED no longer writes to localStorage — it only recomputes
+  // remainingTimeInSeconds in the child actor context via Date.now() delta.
+
+  afterEach(() => vi.useRealTimers());
 
   function getStoredTimers() {
     return JSON.parse(
@@ -308,18 +319,21 @@ describe("timerListMachine", () => {
     actor.stop();
   });
 
-  it("SECONDS_ELAPSED syncs remaining time to localStorage", async () => {
+  it("SECONDS_ELAPSED updates remainingTimeInSeconds in machine context (wall-clock based)", async () => {
+    vi.useFakeTimers();
+    const t0 = 1_700_000_000_000;
+    vi.setSystemTime(t0);
+
     const actor = await startReadyMachine();
     actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
     const timerRef = actor.getSnapshot().context.timers[0];
-    timerRef.send({
-      type: "TIMER_INTERVAL_SET",
-      intervalValue: timerIntervals[0],
-    }); // 900s
-    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // start running
-    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // tick once → 899s
+    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[0] }); // 900s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // start: timerStartedAtMs = t0
 
-    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(899);
+    vi.setSystemTime(t0 + 1_000); // advance 1 second
+    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // recomputes: 900 - 1 = 899
+
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(899);
     actor.stop();
   });
 
@@ -340,55 +354,56 @@ describe("timerListMachine", () => {
   });
 
   it("COUNTDOWN_TIMER_PLAY_PAUSED (running→paused) syncs remaining time to localStorage", async () => {
+    vi.useFakeTimers();
+    const t0 = 1_700_000_000_000;
+    vi.setSystemTime(t0);
+
     const actor = await startReadyMachine();
     actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
     const timerRef = actor.getSnapshot().context.timers[0];
-    timerRef.send({
-      type: "TIMER_INTERVAL_SET",
-      intervalValue: timerIntervals[1],
-    }); // 30 min = 1800s
-    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // start
-    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // 1799s
-    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // 1798s
-    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // pause — should snapshot 1798s
+    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[1] }); // 1800s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // start: timerStartedAtMs = t0
+
+    vi.setSystemTime(t0 + 2_000); // advance 2 seconds
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // pause: freezes at 1800 - 2 = 1798
 
     expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(1798);
     actor.stop();
   });
 
-  it("SECONDS_ELAPSED with a large delta catches up the full elapsed time", async () => {
+  it("SECONDS_ELAPSED computes remaining from wall clock after large time gap", async () => {
+    vi.useFakeTimers();
+    const t0 = 1_700_000_000_000;
+    vi.setSystemTime(t0);
+
     const actor = await startReadyMachine();
     actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
     const timerRef = actor.getSnapshot().context.timers[0];
-    timerRef.send({
-      type: "TIMER_INTERVAL_SET",
-      intervalValue: timerIntervals[1],
-    }); // 30 min = 1800s
+    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[1] }); // 1800s
     timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // start
 
-    // Simulate tab being suspended for 30 seconds (intensive throttling)
-    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 30 });
+    vi.setSystemTime(t0 + 30_000); // advance 30 seconds
+    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // wakeup tick: 1800 - 30 = 1770
 
-    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(1770); // 1800 - 30
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(1770);
     actor.stop();
   });
 
-  it("SECONDS_ELAPSED clamps to 0 if delta exceeds remaining time", async () => {
+  it("SECONDS_ELAPSED clamps to 0 if elapsed time exceeds remaining time", async () => {
+    vi.useFakeTimers();
+    const t0 = 1_700_000_000_000;
+    vi.setSystemTime(t0);
+
     const actor = await startReadyMachine();
     actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
     const timerRef = actor.getSnapshot().context.timers[0];
-    timerRef.send({
-      type: "TIMER_INTERVAL_SET",
-      intervalValue: timerIntervals[0],
-    }); // 900s
+    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[0] }); // 900s
     timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // start
-    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // 899s
 
-    // Send a huge delta larger than remaining time
-    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 10000 });
+    vi.setSystemTime(t0 + 10_000_000); // advance well past 900s
+    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // max(0, 900 - 10000) = 0
 
-    // Should clamp to 0, not go negative
-    expect(getStoredTimers()[0].remainingTimeInSeconds).toBe(0);
+    expect(timerRef.getSnapshot().context.remainingTimeInSeconds).toBe(0);
     actor.stop();
   });
 
@@ -442,6 +457,7 @@ describe("timerListMachine", () => {
           label: "Old Label",
           currentCount: 0,
           remainingTimeSeconds: 0,
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -453,6 +469,7 @@ describe("timerListMachine", () => {
         label: "New Label",
         currentCount: 0,
         remainingTimeSeconds: 0,
+        timerStartedAtMs: 0n,
       },
     });
 
@@ -466,13 +483,13 @@ describe("timerListMachine", () => {
     actor.send({
       type: "STDB_SYNC_APPLIED",
       rows: [
-        { id: 21n, label: "Test", currentCount: 0, remainingTimeSeconds: 0 },
+        { id: 21n, label: "Test", currentCount: 0, remainingTimeSeconds: 0, timerStartedAtMs: 0n },
       ],
     });
 
     actor.send({
       type: "STDB_TIMER_UPDATED",
-      row: { id: 21n, label: "Test", currentCount: 7, remainingTimeSeconds: 0 },
+      row: { id: 21n, label: "Test", currentCount: 7, remainingTimeSeconds: 0, timerStartedAtMs: 0n },
     });
 
     const ctx = actor.getSnapshot().context.timers[0].getSnapshot().context;
@@ -485,7 +502,7 @@ describe("timerListMachine", () => {
     actor.send({
       type: "STDB_SYNC_APPLIED",
       rows: [
-        { id: 22n, label: "Test", currentCount: 0, remainingTimeSeconds: 0 },
+        { id: 22n, label: "Test", currentCount: 0, remainingTimeSeconds: 0, timerStartedAtMs: 0n },
       ],
     });
 
@@ -496,6 +513,7 @@ describe("timerListMachine", () => {
         label: "Test",
         currentCount: 0,
         remainingTimeSeconds: 1800,
+        timerStartedAtMs: 0n,
       },
     });
 
@@ -509,7 +527,7 @@ describe("timerListMachine", () => {
     actor.send({
       type: "STDB_SYNC_APPLIED",
       rows: [
-        { id: 23n, label: "Old", currentCount: 1, remainingTimeSeconds: 100 },
+        { id: 23n, label: "Old", currentCount: 1, remainingTimeSeconds: 100, timerStartedAtMs: 0n },
       ],
     });
 
@@ -520,6 +538,7 @@ describe("timerListMachine", () => {
         label: "Updated",
         currentCount: 5,
         remainingTimeSeconds: 900,
+        timerStartedAtMs: 0n,
       },
     });
 
@@ -540,6 +559,7 @@ describe("timerListMachine", () => {
         label: "Ghost",
         currentCount: 0,
         remainingTimeSeconds: 0,
+        timerStartedAtMs: 0n,
       },
     });
     expect(actor.getSnapshot().context.timers).toHaveLength(0);
@@ -551,7 +571,7 @@ describe("timerListMachine", () => {
     actor.send({
       type: "STDB_SYNC_APPLIED",
       rows: [
-        { id: 24n, label: "Test", currentCount: 0, remainingTimeSeconds: 0 },
+        { id: 24n, label: "Test", currentCount: 0, remainingTimeSeconds: 0, timerStartedAtMs: 0n },
       ],
     });
     // Capture the localStorage state right after STDB_SYNC_APPLIED
@@ -564,6 +584,7 @@ describe("timerListMachine", () => {
         label: "Remote Update",
         currentCount: 3,
         remainingTimeSeconds: 500,
+        timerStartedAtMs: 0n,
       },
     });
 
@@ -586,6 +607,7 @@ describe("timerListMachine", () => {
       timerLabel: "Remote Label",
       currentCount: 9,
       remainingTimeInSeconds: 300,
+      timerStartedAtMs: 0,
       timerState: "new",
     });
 
@@ -616,6 +638,7 @@ describe("timerListMachine", () => {
       timerLabel: "Test",
       currentCount: 0,
       remainingTimeInSeconds: 900,
+      timerStartedAtMs: 0,
     });
 
     expect(timerRef.getSnapshot().matches("timerSet")).toBe(true);
@@ -634,6 +657,7 @@ describe("timerListMachine", () => {
       timerLabel: "Focus",
       currentCount: 2,
       remainingTimeInSeconds: 451,
+      timerStartedAtMs: 0,
     });
 
     expect(timerRef.getSnapshot().matches("paused")).toBe(true);
@@ -653,6 +677,7 @@ describe("timerListMachine", () => {
       timerLabel: "Work",
       currentCount: 1,
       remainingTimeInSeconds: 891,
+      timerStartedAtMs: 0,
     });
 
     expect(timerRef.getSnapshot().matches("running")).toBe(true);
@@ -672,6 +697,7 @@ describe("timerListMachine", () => {
       timerLabel: "Done",
       currentCount: 3,
       remainingTimeInSeconds: 0,
+      timerStartedAtMs: 0,
     });
 
     expect(timerRef.getSnapshot().matches("finished")).toBe(true);
@@ -697,6 +723,7 @@ describe("timerListMachine", () => {
       timerLabel: "Reset",
       currentCount: 0,
       remainingTimeInSeconds: 0,
+      timerStartedAtMs: 0,
     });
 
     expect(timerRef.getSnapshot().matches("new")).toBe(true);
@@ -714,6 +741,7 @@ describe("timerListMachine", () => {
           currentCount: 0,
           remainingTimeSeconds: 900,
           timerState: "timerSet",
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -732,6 +760,7 @@ describe("timerListMachine", () => {
         currentCount: 0,
         remainingTimeSeconds: 891,
         timerState: "running",
+        timerStartedAtMs: 0n,
       },
     });
 
@@ -756,6 +785,7 @@ describe("timerListMachine", () => {
           currentCount: 0,
           remainingTimeSeconds: 900,
           timerState: "running",
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -774,6 +804,7 @@ describe("timerListMachine", () => {
         currentCount: 0,
         remainingTimeSeconds: 751,
         timerState: "paused",
+        timerStartedAtMs: 0n,
       },
     });
 
@@ -805,6 +836,7 @@ describe("timerListMachine", () => {
           label: "Original",
           currentCount: 0,
           remainingTimeSeconds: 0,
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -817,6 +849,7 @@ describe("timerListMachine", () => {
         label: "First Update",
         currentCount: 0,
         remainingTimeSeconds: 0,
+        timerStartedAtMs: 0n,
       },
     });
     expect(
@@ -831,6 +864,7 @@ describe("timerListMachine", () => {
         label: "First Update",
         currentCount: 3,
         remainingTimeSeconds: 0,
+        timerStartedAtMs: 0n,
       },
     });
     const ctx = actor.getSnapshot().context.timers[0].getSnapshot().context;
@@ -849,6 +883,7 @@ describe("timerListMachine", () => {
           label: "Original",
           currentCount: 0,
           remainingTimeSeconds: 0,
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -863,6 +898,7 @@ describe("timerListMachine", () => {
         label: "Update 1",
         currentCount: 2,
         remainingTimeSeconds: 0,
+        timerStartedAtMs: 0n,
       },
     });
     actor.send({
@@ -872,6 +908,7 @@ describe("timerListMachine", () => {
         label: "Update 2",
         currentCount: 5,
         remainingTimeSeconds: 0,
+        timerStartedAtMs: 0n,
       },
     });
 
@@ -895,6 +932,7 @@ describe("timerListMachine", () => {
           currentCount: 0,
           remainingTimeSeconds: 900,
           timerState: "timerSet",
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -910,6 +948,7 @@ describe("timerListMachine", () => {
         currentCount: 0,
         remainingTimeSeconds: 891,
         timerState: "running",
+        timerStartedAtMs: 0n,
       },
     });
 
@@ -941,6 +980,7 @@ describe("timerListMachine", () => {
           currentCount: 1,
           remainingTimeSeconds: 891,
           timerState: "running",
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -962,6 +1002,7 @@ describe("timerListMachine", () => {
           currentCount: 0,
           remainingTimeSeconds: 451,
           timerState: "paused",
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -982,6 +1023,7 @@ describe("timerListMachine", () => {
           currentCount: 0,
           remainingTimeSeconds: 1800,
           timerState: "timerSet",
+          timerStartedAtMs: 0n,
         },
       ],
     });
@@ -1001,6 +1043,7 @@ describe("timerListMachine", () => {
         currentCount: 2,
         remainingTimeSeconds: 735,
         timerState: "running",
+        timerStartedAtMs: 0n,
       },
     });
     const timerRef = actor.getSnapshot().context.timers[0];
@@ -1020,6 +1063,7 @@ describe("timerListMachine", () => {
         currentCount: 3,
         remainingTimeSeconds: 420,
         timerState: "paused",
+        timerStartedAtMs: 0n,
       },
     });
     const timerRef = actor.getSnapshot().context.timers[0];
@@ -1124,26 +1168,34 @@ describe("timerListMachine", () => {
     const actor = await startReadyMachine();
     actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
     const timerRef = actor.getSnapshot().context.timers[0];
-    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[0] }); // timerSet
+    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[0] }); // 900s
     timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // running
-    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 1 }); // 899s
+    // For running timers, localStorage stores _remainingAtStart (frozen at
+    // play time = 900) + timerStartedAtMs. The ticking computed remaining
+    // is NOT persisted — the wall-clock formula reconstructs it on the fly.
 
     const stored = JSON.parse(
       localStorage.getItem("timerCounterSavedState") ?? "[]",
-    ) as Array<{ timerState: string; remainingTimeInSeconds: number }>;
+    ) as Array<{ timerState: string; remainingTimeInSeconds: number; timerStartedAtMs: number }>;
     expect(stored[0].timerState).toBe("running");
-    expect(stored[0].remainingTimeInSeconds).toBe(899);
+    expect(stored[0].remainingTimeInSeconds).toBe(900); // _remainingAtStart = 900
+    expect(stored[0].timerStartedAtMs).toBeGreaterThan(0);
     actor.stop();
   });
 
   it("TIMER_COUNTER_STATE_CHANGED persists timerState 'paused' to localStorage", async () => {
+    vi.useFakeTimers();
+    const t0 = 1_700_000_000_000;
+    vi.setSystemTime(t0);
+
     const actor = await startReadyMachine();
     actor.send({ type: "NEW_TIMER_COUNTER_CREATED" });
     const timerRef = actor.getSnapshot().context.timers[0];
-    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[0] }); // timerSet
-    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // running
-    timerRef.send({ type: "SECONDS_ELAPSED", seconds: 5 }); // 895s
-    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // paused
+    timerRef.send({ type: "TIMER_INTERVAL_SET", intervalValue: timerIntervals[0] }); // 900s
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // running: timerStartedAtMs = t0
+
+    vi.setSystemTime(t0 + 5_000); // advance 5 seconds
+    timerRef.send({ type: "COUNTDOWN_TIMER_PLAY_PAUSED" }); // paused: frozen at 900 - 5 = 895
 
     const stored = JSON.parse(
       localStorage.getItem("timerCounterSavedState") ?? "[]",

@@ -31,6 +31,13 @@ const timerCounterMachine = setup({
       remainingTimeInSeconds: number;
       timerLabel: string;
       currentCount: number;
+      // UTC epoch ms when the timer was last started (0 = not running).
+      // Combined with _remainingAtStart, the actual remaining time can always
+      // be derived: max(0, _remainingAtStart - round((now - timerStartedAtMs) / 1000)).
+      timerStartedAtMs: number;
+      // Frozen remainingTimeInSeconds at the moment play was pressed.
+      // Stable for the duration of a running session; cleared on pause/reset.
+      _remainingAtStart: number;
       // Ephemeral: set from input on spawn, cleared after the first
       // always-transition away from "new" so that COUNTDOWN_TIMER_RESET
       // (which returns to "new") doesn't trigger the restore a second time.
@@ -51,6 +58,7 @@ const timerCounterMachine = setup({
         currentCount: number;
         remainingTimeInSeconds: number;
         timerState: string;
+        timerStartedAtMs: number;
       },
     input: {} as {
       remainingTimeInSeconds?: number;
@@ -59,16 +67,47 @@ const timerCounterMachine = setup({
       // Persist and restore the XState state value so a page reload caused by
       // an auth redirect returns the timer to its exact state.
       timerState?: string;
+      // UTC epoch ms when the timer was last started (for restoring running
+      // timers from localStorage or STDB with correct wall-clock remaining).
+      timerStartedAtMs?: number;
     },
   },
   actions: {
-    decrementTimerCountdown: assign({
-      remainingTimeInSeconds: ({ context, event }) => {
-        const seconds =
-          (event as Extract<typeof event, { type: "SECONDS_ELAPSED" }>)
-            .seconds ?? 1;
-        return Math.max(0, context.remainingTimeInSeconds - seconds);
+    // Recomputes remainingTimeInSeconds from the wall clock on every worker
+    // tick. Using Date.now() delta instead of counting seconds means a
+    // suspended tab catches up correctly on the first tick after wakeup.
+    // Guard: if timerStartedAtMs is 0 (e.g. test without mocked time), leave
+    // remainingTimeInSeconds unchanged to avoid computing from epoch.
+    computeRemainingFromWallClock: assign({
+      remainingTimeInSeconds: ({ context }) => {
+        if (context.timerStartedAtMs === 0) return context.remainingTimeInSeconds;
+        return Math.max(
+          0,
+          context._remainingAtStart -
+            Math.round((Date.now() - context.timerStartedAtMs) / 1000),
+        );
       },
+    }),
+    // Called when play is pressed (timerSet→running or paused→running).
+    // Captures the current time and the frozen remaining so wall-clock deltas
+    // can be applied correctly.
+    startTimer: assign({
+      timerStartedAtMs: () => Date.now(),
+      _remainingAtStart: ({ context }) => context.remainingTimeInSeconds,
+    }),
+    // Called when pause is pressed (running→paused). Freezes the wall-clock-
+    // derived remaining time and clears the running bookmarks.
+    pauseTimer: assign({
+      remainingTimeInSeconds: ({ context }) => {
+        if (context.timerStartedAtMs === 0) return context.remainingTimeInSeconds;
+        return Math.max(
+          0,
+          context._remainingAtStart -
+            Math.round((Date.now() - context.timerStartedAtMs) / 1000),
+        );
+      },
+      timerStartedAtMs: () => 0,
+      _remainingAtStart: () => 0,
     }),
     decrementTimerCounter: assign({
       currentCount: ({ context }) =>
@@ -89,21 +128,35 @@ const timerCounterMachine = setup({
     },
     resetTimerCountdown: assign({
       remainingTimeInSeconds: () => 0,
+      timerStartedAtMs: () => 0,
+      _remainingAtStart: () => 0,
     }),
     syncTimerState: sendParent({
       type: "TIMER_COUNTER_STATE_CHANGED",
     }),
     // Applies a full context update from SpacetimeDB without notifying the
     // parent (no syncTimerState), so the update is not echoed back to STDB.
+    // For running timers, remaining_time_seconds in STDB holds _remainingAtStart
+    // (the frozen value at play time). We derive the actual current remaining
+    // from the wall clock immediately so the display is accurate on sync.
     syncFromRemote: assign(({ event }) => {
       const e = event as Extract<
         typeof event,
         { type: "TIMER_STATE_SYNCED_FROM_REMOTE" }
       >;
+      const isRunning = e.timerState === "running" && e.timerStartedAtMs > 0;
       return {
         timerLabel: e.timerLabel,
         currentCount: e.currentCount,
-        remainingTimeInSeconds: e.remainingTimeInSeconds,
+        timerStartedAtMs: e.timerStartedAtMs,
+        _remainingAtStart: isRunning ? e.remainingTimeInSeconds : 0,
+        remainingTimeInSeconds: isRunning
+          ? Math.max(
+              0,
+              e.remainingTimeInSeconds -
+                Math.round((Date.now() - e.timerStartedAtMs) / 1000),
+            )
+          : e.remainingTimeInSeconds,
       };
     }),
     setTimerCountdown: assign({
@@ -129,6 +182,12 @@ const timerCounterMachine = setup({
     remainingTimeInSeconds: input?.remainingTimeInSeconds ?? 0,
     timerLabel: input?.timerLabel ?? "New Timer Counter",
     currentCount: input?.currentCount ?? 0,
+    timerStartedAtMs: input?.timerStartedAtMs ?? 0,
+    // For a running restore, _remainingAtStart = the frozen remaining at play
+    // time (which is what remainingTimeInSeconds holds in localStorage/STDB
+    // for running timers). For non-running states it starts at 0.
+    _remainingAtStart:
+      input?.timerState === "running" ? (input?.remainingTimeInSeconds ?? 0) : 0,
     _initialTimerState: input?.timerState ?? "new",
   }),
   on: {
@@ -215,6 +274,7 @@ const timerCounterMachine = setup({
         },
         COUNTDOWN_TIMER_PLAY_PAUSED: {
           target: "running",
+          actions: ["startTimer", "syncTimerState"],
         },
         COUNTDOWN_TIMER_RESET: {
           target: "new",
@@ -226,10 +286,14 @@ const timerCounterMachine = setup({
       on: {
         COUNTDOWN_TIMER_PLAY_PAUSED: {
           target: "paused",
-          actions: "syncTimerState",
+          actions: ["pauseTimer", "syncTimerState"],
         },
+        // Worker fires ~1/s. We recompute remaining from the wall clock so a
+        // suspended tab catches up on first wakeup tick. syncTimerState is
+        // intentionally omitted: the display updates via useSelector on the
+        // child actor, and we don't want per-second localStorage/STDB writes.
         SECONDS_ELAPSED: {
-          actions: ["decrementTimerCountdown", "syncTimerState"],
+          actions: ["computeRemainingFromWallClock"],
           target: "running",
         },
       },
@@ -243,6 +307,7 @@ const timerCounterMachine = setup({
       on: {
         COUNTDOWN_TIMER_PLAY_PAUSED: {
           target: "running",
+          actions: ["startTimer", "syncTimerState"],
         },
         COUNTDOWN_TIMER_RESET: {
           target: "new",

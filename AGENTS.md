@@ -47,8 +47,6 @@ src/
     timerListContext.tsx       # createActorContext wrapper for timerListMachine
     spacetimedb.ts            # DbConnection factory (createDbConnection)
     registerServiceWorker.ts  # Service worker registration (called from ServiceWorkerRegistration)
-    useWakeLock.ts            # Hook: requests screen wake lock while a timer is running
-    useWakeLock.test.ts       # Unit tests for useWakeLock (8 tests)
     pwa.test.ts               # Unit tests for manifest + SW registration (14 tests)
   components/
     molecule/
@@ -146,14 +144,12 @@ All non-trivial state lives in XState v5 machines. Conventions:
 
 ---
 
-## PWA — Service Worker + Wake Lock
+## PWA — Service Worker
 
 - **Manifest**: `public/manifest.json` — `display: standalone`, icons at `/static/pwa-192x192.png` and `/static/pwa-512x512.png`, `theme_color: "#1e293b"`, `start_url: "/"`
 - **Service worker**: `public/sw.js` — cache-first for `/_next/static/`, network-first for navigation, stale-while-revalidate for everything else; `skipWaiting()` + `clients.claim()`
 - **Registration**: `src/lib/registerServiceWorker.ts` — guards `if (!navigator.serviceWorker) return;` (falsy check, not `"serviceWorker" in navigator`, to handle browsers where the property exists but is `undefined`); registers `sw.js` with `scope: "/"`
 - **`ServiceWorkerRegistration`**: `src/components/ServiceWorkerRegistration.tsx` — `"use client"` headless component, calls `registerServiceWorker()` in `useEffect`. Rendered in `src/app/layout.tsx`.
-- **Wake Lock**: `src/lib/useWakeLock.ts` — `useWakeLock(active: boolean)` hook. When `active` is true, requests `navigator.wakeLock.request("screen")` to keep the screen on while the timer is running. Re-acquires on `visibilitychange` when the page becomes visible again (wake lock is automatically released when the tab is hidden). Guards with `if (!navigator.wakeLock) return;`. Called in `TimerCounterComponent` as `useWakeLock(snapshot.matches("running"))`.
-- Wake lock and wall-clock accuracy are complementary: wake lock keeps the screen on for the user; wall-clock deltas keep the timer accurate regardless of tab throttling.
 
 ---
 
@@ -187,8 +183,8 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 
 - Server module: `spacetimedb/` (TypeScript, publishes to `maincloud.spacetimedb.com`)
 - Database: `timer-counter-6b3bt` on `maincloud`
-- Table: `timer_counter` — `id (u64 autoInc PK)`, `owner (identity)`, `label (string)`, `current_count (i32)`, `remaining_time_seconds (u32)`, `timer_state (string)`, `public: true`
-- Reducers: `create_timer_counter({ label })`, `update_timer_counter({ id, label, current_count, remaining_time_seconds, timer_state })`, `delete_timer_counter({ id })` — all enforce `ctx.sender === row.owner`
+- Table: `timer_counter` — `id (u64 autoInc PK)`, `owner (identity)`, `label (string)`, `current_count (i32)`, `remaining_time_seconds (u32)`, `timer_state (string)`, `timer_started_at_ms (u64, default 0)`, `public: true`
+- Reducers: `create_timer_counter({ label })`, `update_timer_counter({ id, label, current_count, remaining_time_seconds, timer_state, timer_started_at_ms })`, `delete_timer_counter({ id })` — all enforce `ctx.sender === row.owner`
 - Generated bindings: `src/lib/module_bindings/` (client app) and `spacetimedb/src/module_bindings/` (server) — do not edit
 - To regenerate bindings after publishing module changes: `cd spacetimedb && npm run spacetime:generate`
 - To publish module: `cd spacetimedb && npm run spacetime:publish`
@@ -196,7 +192,7 @@ Authentication uses SpacetimeDB's own OIDC provider (SpacetimeAuth) with Google 
 
 ### Sync Architecture
 
-**Sync preference**: ALL timer state — `label`, `currentCount`, `remainingTimeInSeconds`, and `timerState` — is always synced bidirectionally. Any change on any device (label edit, counter increment, timer start/pause/reset) propagates to every other connected device. When designing new features, default to syncing all state rather than leaving anything device-local.
+**Sync preference**: ALL timer state — `label`, `currentCount`, `remainingTimeInSeconds`, `timerState`, and `timerStartedAtMs` — is always synced bidirectionally. Any change on any device (label edit, counter increment, timer start/pause/reset) propagates to every other connected device. When designing new features, default to syncing all state rather than leaving anything device-local.
 
 `SyncBridge` (`src/components/SyncBridge.tsx`) is a headless React component rendered inside `TimerListContext.Provider`. It owns the entire STDB connection lifecycle:
 
@@ -219,7 +215,7 @@ The `SyncBridge` effect checks `auth.isAuthenticated` and `auth.error` before at
 
 **Echo-loop prevention (`lastUploadedValues` pattern):**
 
-`actorRef.subscribe` fires on every machine transition, including STDB-originated ones (`STDB_TIMER_UPDATED`, `STDB_SYNC_APPLIED`). Without guards this causes every STDB event to trigger an upload for all timers. `lastUploadedValues: Map<string, UploadedValues>` records the last values uploaded to or received from STDB per actor. The subscribe callback skips `updateTimerCounter` when the current actor snapshot matches the map. `onUpdate` uses the same map to detect echoes of our own writes. This prevents the failure mode where `pendingUpdates` on Device B grows from STDB-event transitions and silences genuine remote updates.
+`actorRef.subscribe` fires on every machine transition, including STDB-originated ones (`STDB_TIMER_UPDATED`, `STDB_SYNC_APPLIED`). Without guards this causes every STDB event to trigger an upload for all timers. `lastUploadedValues: Map<string, UploadedValues>` records the last values uploaded to or received from STDB per actor (`label`, `currentCount`, `remainingTimeSeconds`, `timerState`, `timerStartedAtMs`). The subscribe callback skips `updateTimerCounter` when the current actor snapshot matches the map. `onUpdate` uses the same map to detect echoes of our own writes. This prevents the failure mode where Device B grows a backlog of redundant updates and silences genuine remote changes.
 
 **`timerListMachine` STDB context:**
 
@@ -228,13 +224,22 @@ The `SyncBridge` effect checks `auth.isAuthenticated` and `auth.error` before at
 - `STDB_SYNC_APPLIED` updates existing actors in-place (preserving the user's established timer order from localStorage), then appends any new STDB rows as fresh actors. Actors no longer in STDB are dropped. STDB is still authoritative for data; localStorage order is preserved for UX.
 - `STDB_TIMER_UPDATED` dispatches `TIMER_STATE_SYNCED_FROM_REMOTE` to the child actor; `syncFromRemote` updates context but does NOT write to localStorage (keeps the echo loop broken)
 
-**Background-tab flush (`forceFlushRunningTimers`):**
+**Timer timing model (`timer_started_at_ms` + `_remainingAtStart`):**
 
-Browsers throttle background tabs and can suppress `actorRef.subscribe` for up to 60 seconds, so timer state may not reach STDB while the tab is hidden. `SyncBridge` registers a `visibilitychange` listener: every time the tab transitions to `visibilityState === "hidden"`, `forceFlushRunningTimers()` is called. It iterates all actors whose XState value is `"running"`, calls `updateTimerCounter` immediately (bypassing the subscribe cycle), and pre-populates `lastUploadedValues` so the echo suppression in `onUpdate` still correctly discards the resulting echo. The listener is removed in the `useEffect` cleanup alongside `machSub.unsubscribe()` and `conn.disconnect()`.
+Running timers do not upload `remaining_time_seconds` every second. Instead:
+- On play: `timerStartedAtMs = Date.now()` and `_remainingAtStart = remainingTimeInSeconds` are captured in machine context (via `startTimer` action).
+- `remaining_time_seconds` in STDB stores `_remainingAtStart` for running timers (the frozen value at play time), and the frozen remaining for paused/timerSet.
+- `timer_started_at_ms` in STDB stores the epoch-ms timestamp when the timer started (0 when not running).
+- Any device receiving a running timer via STDB computes actual remaining immediately: `max(0, remaining_time_seconds - round((now_ms - timer_started_at_ms) / 1000))`.
+- `SECONDS_ELAPSED` (from `TimerWorker`) calls `computeRemainingFromWallClock` instead of decrementing by delta — it recomputes from `Date.now() - timerStartedAtMs` so any tab-suspension catch-up happens in the first wakeup tick without any special flush logic.
+- `SECONDS_ELAPSED` does **not** call `syncTimerState` → no per-second localStorage or STDB writes while the timer is running. Uploads only happen on state transitions (play/pause/reset/label/count).
+- On pause: `pauseTimer` freezes `remainingTimeInSeconds` from the wall clock and clears `timerStartedAtMs = 0`.
+- `_remainingAtStart = 0` and `timerStartedAtMs = 0` are also cleared on reset.
+- Guard in `syncFromRemote` and `computeRemainingFromWallClock`: when `timerStartedAtMs === 0`, the remaining time is used as-is (avoids computing `Date.now() - 0` = epoch distance for non-running or test-context actors).
 
-**TimerWorker wall-clock approach:**
+**TimerWorker:**
 
-`TimerWorker.ts` uses `Date.now()` deltas instead of counting `setInterval` ticks. On each interval it posts `{ type: "SECONDS_ELAPSED", seconds: N }` where `N = Math.max(1, Math.round((now - lastTickAt) / 1000))`. After a 30-second throttle/suspension the first wakeup tick carries `seconds: 30` and the machine catches up immediately. `timerCounterMachine` handles `SECONDS_ELAPSED` and subtracts `event.seconds`, clamped to `Math.max(0, ...)` so remainingTime never goes negative.
+`TimerWorker.ts` fires `{ type: "SECONDS_ELAPSED" }` approximately every second via `setInterval`. The machine's `computeRemainingFromWallClock` action recomputes remaining time from `Date.now() - timerStartedAtMs`, so the display is always accurate after any suspension regardless of how many ticks were skipped.
 
 ---
 

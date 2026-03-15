@@ -7,6 +7,10 @@ type TimerSavedContext = {
   timerLabel: string;
   currentCount: number;
   timerState?: string;
+  // For running timers: UTC epoch ms when the timer was last started.
+  // remainingTimeInSeconds stored alongside it holds _remainingAtStart (the
+  // frozen remaining at play time) so the wall-clock formula can be applied.
+  timerStartedAtMs?: number;
 };
 
 export type StdbTimerRow = {
@@ -15,6 +19,7 @@ export type StdbTimerRow = {
   currentCount: number;
   remainingTimeSeconds: number;
   timerState?: string; // optional — defaults to "new" when absent
+  timerStartedAtMs: bigint; // 0n = not running
 };
 
 const timerListMachine = setup({
@@ -66,12 +71,8 @@ const timerListMachine = setup({
                     currentCount: t.currentCount,
                     remainingTimeInSeconds: t.remainingTimeInSeconds,
                     timerLabel: t.timerLabel,
-                    // timerState is read by the timerCounterMachine via
-                    // always-transitions in the "new" state so the timer
-                    // resumes its exact state after a page reload / auth
-                    // redirect without needing a post-spawn send() that
-                    // could be dropped before the actor starts processing.
                     timerState: t.timerState,
+                    timerStartedAtMs: t.timerStartedAtMs ?? 0,
                   },
                 });
                 return timer;
@@ -108,14 +109,21 @@ const timerListMachine = setup({
               const snap = timerRef.getSnapshot();
               const timerContext = snap?.context;
               if (timerContext) {
+                const timerState = (snap?.value as string) ?? "new";
+                const isRunning = timerState === "running";
                 allTimersContext.push({
                   id: timerRef.id,
-                  ...timerContext,
-                  // Persist the XState state value ("running", "paused", etc.)
-                  // so that a page reload (e.g. from auth redirect) can
-                  // restore the timer to its exact state without waiting for
-                  // STDB to confirm it.
-                  timerState: (snap?.value as string) ?? "new",
+                  timerLabel: timerContext.timerLabel,
+                  currentCount: timerContext.currentCount,
+                  // For running timers, persist _remainingAtStart (the frozen
+                  // remaining at play time) and timerStartedAtMs so the
+                  // wall-clock formula can reconstruct correct remaining on
+                  // restore. For paused/timerSet, persist the frozen remaining.
+                  remainingTimeInSeconds: isRunning
+                    ? timerContext._remainingAtStart
+                    : timerContext.remainingTimeInSeconds,
+                  timerStartedAtMs: timerContext.timerStartedAtMs,
+                  timerState,
                 });
               }
             }
@@ -152,6 +160,7 @@ const timerListMachine = setup({
                   timerLabel: row.label,
                   currentCount: row.currentCount,
                   remainingTimeInSeconds: row.remainingTimeSeconds,
+                  timerStartedAtMs: Number(row.timerStartedAtMs),
                 });
               }
             }
@@ -176,6 +185,7 @@ const timerListMachine = setup({
                     remainingTimeInSeconds: row.remainingTimeSeconds,
                     timerLabel: row.label,
                     timerState: row.timerState ?? "new",
+                    timerStartedAtMs: Number(row.timerStartedAtMs),
                   },
                 });
                 return timer;
@@ -188,9 +198,10 @@ const timerListMachine = setup({
               stdbIdMap[`stdb-${row.id}`] = row.id;
             }
 
-            // Persist to localStorage including timerState so that page
-            // reloads can restore running/paused state without waiting for
-            // STDB to reconnect.
+            // Persist to localStorage including timerState and timerStartedAtMs
+            // so that page reloads can restore running/paused state without
+            // waiting for STDB to reconnect. For running timers, remainingTime
+            // stores _remainingAtStart (the frozen value at play time).
             const allTimersContext = timers.map((t) => {
               const row = rowMap.get(t.id);
               return {
@@ -198,6 +209,7 @@ const timerListMachine = setup({
                 timerLabel: row?.label ?? "",
                 currentCount: row?.currentCount ?? 0,
                 remainingTimeInSeconds: row?.remainingTimeSeconds ?? 0,
+                timerStartedAtMs: Number(row?.timerStartedAtMs ?? 0n),
                 timerState: row?.timerState ?? "new",
               };
             });
@@ -223,6 +235,7 @@ const timerListMachine = setup({
                 remainingTimeInSeconds: event.row.remainingTimeSeconds,
                 timerLabel: event.row.label,
                 timerState: event.row.timerState ?? "new",
+                timerStartedAtMs: Number(event.row.timerStartedAtMs),
               },
             });
             return {
@@ -247,6 +260,7 @@ const timerListMachine = setup({
               currentCount: event.row.currentCount,
               remainingTimeInSeconds: event.row.remainingTimeSeconds,
               timerState: event.row.timerState ?? "new",
+              timerStartedAtMs: Number(event.row.timerStartedAtMs),
             });
           },
         },

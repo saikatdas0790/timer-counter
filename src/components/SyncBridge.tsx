@@ -12,10 +12,17 @@ import { TimerListContext } from "@/lib/timerListContext";
  * STDB → machine: sends STDB_SYNC_APPLIED / STDB_TIMER_INSERTED / STDB_TIMER_DELETED / STDB_ID_LINKED
  * Machine → STDB: watches state changes, calls createTimerCounter / updateTimerCounter / deleteTimerCounter
  *
- * Sync preference: ALL timer state (label, count, remainingTime, timerState) is always synced to STDB
- * so that any device can resume from where another left off. Echo suppression is done via
+ * Sync preference: ALL timer state (label, count, timerState, timerStartedAtMs) is always synced to
+ * STDB so any device can resume from where another left off. Echo suppression is done via
  * lastUploadedValues — we only upload a timer when its local values differ from the last
  * values we sent to (or received from) STDB, preventing infinite re-upload loops.
+ *
+ * Running timer timing: instead of uploading a dwindling remaining_time_seconds every second,
+ * we store timer_started_at_ms (epoch ms) when play is pressed and keep remaining_time_seconds
+ * frozen at the value it had at play time (_remainingAtStart). Any client or reconnect can
+ * derive actual remaining = max(0, remaining_time_seconds - round((now - timer_started_at_ms) / 1000)).
+ * This eliminates per-second STDB writes for running timers and avoids the post-wakeup
+ * revert caused by a stale server value overwriting the wall-clock-corrected local value.
  */
 export function SyncBridge() {
   const auth = useAuth();
@@ -43,8 +50,11 @@ export function SyncBridge() {
     type UploadedValues = {
       label: string;
       currentCount: number;
+      // For running timers: _remainingAtStart (frozen at play time).
+      // For paused/timerSet: the frozen remaining value.
       remainingTimeInSeconds: number;
       timerState: string;
+      timerStartedAtMs: bigint;
     };
     const lastUploadedValues = new Map<string, UploadedValues>();
     // True after the first subscription.onApplied fires
@@ -65,6 +75,7 @@ export function SyncBridge() {
           currentCount: row.currentCount,
           remainingTimeInSeconds: row.remainingTimeSeconds,
           timerState: row.timerState,
+          timerStartedAtMs: row.timerStartedAtMs,
         });
         actorRef.send({
           type: "STDB_ID_LINKED",
@@ -79,6 +90,7 @@ export function SyncBridge() {
           currentCount: row.currentCount,
           remainingTimeInSeconds: row.remainingTimeSeconds,
           timerState: row.timerState,
+          timerStartedAtMs: row.timerStartedAtMs,
         });
         actorRef.send({
           type: "STDB_TIMER_INSERTED",
@@ -88,6 +100,7 @@ export function SyncBridge() {
             currentCount: row.currentCount,
             remainingTimeSeconds: row.remainingTimeSeconds,
             timerState: row.timerState,
+            timerStartedAtMs: row.timerStartedAtMs,
           },
         });
       }
@@ -106,6 +119,7 @@ export function SyncBridge() {
         currentCount: newRow.currentCount,
         remainingTimeInSeconds: newRow.remainingTimeSeconds,
         timerState: newRow.timerState,
+        timerStartedAtMs: newRow.timerStartedAtMs,
       };
       if (actorId) {
         const last = lastUploadedValues.get(actorId);
@@ -118,7 +132,8 @@ export function SyncBridge() {
           last.currentCount === incomingValues.currentCount &&
           last.remainingTimeInSeconds ===
             incomingValues.remainingTimeInSeconds &&
-          last.timerState === incomingValues.timerState
+          last.timerState === incomingValues.timerState &&
+          last.timerStartedAtMs === incomingValues.timerStartedAtMs
         ) {
           return;
         }
@@ -132,6 +147,7 @@ export function SyncBridge() {
           currentCount: newRow.currentCount,
           remainingTimeSeconds: newRow.remainingTimeSeconds,
           timerState: newRow.timerState,
+          timerStartedAtMs: newRow.timerStartedAtMs,
         },
       });
     });
@@ -161,6 +177,7 @@ export function SyncBridge() {
             currentCount: r.currentCount,
             remainingTimeInSeconds: r.remainingTimeSeconds,
             timerState: r.timerState,
+            timerStartedAtMs: r.timerStartedAtMs,
           });
         }
         initialized = true;
@@ -173,6 +190,7 @@ export function SyncBridge() {
             currentCount: r.currentCount,
             remainingTimeSeconds: r.remainingTimeSeconds,
             timerState: r.timerState,
+            timerStartedAtMs: r.timerStartedAtMs,
           })),
         });
       })
@@ -182,44 +200,6 @@ export function SyncBridge() {
       .subscribe("SELECT * FROM timer_counter");
 
     // ── Machine → STDB ──────────────────────────────────────────────────────
-
-    // Force-uploads all running timers to STDB immediately. Called when the
-    // tab goes to background so that throttling can't cause the last known
-    // state to go unsaved. Only running timers need this — paused/stopped
-    // timers haven't changed since the last subscribe-driven upload.
-    function forceFlushRunningTimers() {
-      if (!synced) return;
-      const snapshot = actorRef.getSnapshot();
-      if (!snapshot.matches("ready")) return;
-      for (const timerRef of snapshot.context.timers) {
-        const stdbId = snapshot.context.stdbIdMap[timerRef.id];
-        if (stdbId === undefined) continue;
-        const timerSnapshot = timerRef.getSnapshot();
-        if (timerSnapshot?.value !== "running") continue;
-        const ctx = timerSnapshot?.context;
-        if (!ctx) continue;
-        const timerState =
-          (timerSnapshot?.value as string | undefined) ?? "new";
-        // Record before calling the reducer so the echo in onUpdate is suppressed.
-        lastUploadedValues.set(timerRef.id, {
-          label: ctx.timerLabel,
-          currentCount: ctx.currentCount,
-          remainingTimeInSeconds: ctx.remainingTimeInSeconds,
-          timerState,
-        });
-        conn.reducers
-          .updateTimerCounter({
-            id: stdbId,
-            label: ctx.timerLabel,
-            currentCount: ctx.currentCount,
-            remainingTimeSeconds: ctx.remainingTimeInSeconds,
-            timerState,
-          })
-          .catch(() => {
-            lastUploadedValues.delete(timerRef.id);
-          });
-      }
-    }
 
     const machSub = actorRef.subscribe((snapshot) => {
       if (!snapshot.matches("ready") || !synced) return;
@@ -258,21 +238,35 @@ export function SyncBridge() {
       //    STDB_SYNC_APPLIED triggers actorRef.subscribe.
       // 2. The pendingUpdates counter growing unboundedly from STDB-event
       //    transitions, which used to silence genuine remote updates.
+      //
+      // For running timers, remaining_time_seconds in STDB stores _remainingAtStart
+      // (the frozen remaining at play time) alongside timer_started_at_ms. This
+      // means once play is pressed we upload ONCE and never again until
+      // play-state changes — no more per-second STDB writes for running timers.
       for (const timerRef of currentTimers) {
         const stdbId = snapshot.context.stdbIdMap[timerRef.id];
         if (stdbId !== undefined) {
-          const ctx = timerRef.getSnapshot()?.context;
+          const timerSnap = timerRef.getSnapshot();
+          const ctx = timerSnap?.context;
           const timerState =
-            (timerRef.getSnapshot()?.value as string | undefined) ?? "new";
+            (timerSnap?.value as string | undefined) ?? "new";
           if (ctx) {
+            const isRunning = timerState === "running";
+            // For running timers upload _remainingAtStart (stable, frozen at
+            // play time). For all others upload the frozen remainingTimeInSeconds.
+            const remainingForUpload = isRunning
+              ? ctx._remainingAtStart
+              : ctx.remainingTimeInSeconds;
+            const timerStartedAtMs = BigInt(ctx.timerStartedAtMs ?? 0);
             const last = lastUploadedValues.get(timerRef.id);
             // Skip if nothing changed since last upload
             if (
               last &&
               last.label === ctx.timerLabel &&
               last.currentCount === ctx.currentCount &&
-              last.remainingTimeInSeconds === ctx.remainingTimeInSeconds &&
-              last.timerState === timerState
+              last.remainingTimeInSeconds === remainingForUpload &&
+              last.timerState === timerState &&
+              last.timerStartedAtMs === timerStartedAtMs
             ) {
               continue;
             }
@@ -281,16 +275,18 @@ export function SyncBridge() {
             lastUploadedValues.set(timerRef.id, {
               label: ctx.timerLabel,
               currentCount: ctx.currentCount,
-              remainingTimeInSeconds: ctx.remainingTimeInSeconds,
+              remainingTimeInSeconds: remainingForUpload,
               timerState,
+              timerStartedAtMs,
             });
             conn.reducers
               .updateTimerCounter({
                 id: stdbId,
                 label: ctx.timerLabel,
                 currentCount: ctx.currentCount,
-                remainingTimeSeconds: ctx.remainingTimeInSeconds,
+                remainingTimeSeconds: remainingForUpload,
                 timerState,
+                timerStartedAtMs,
               })
               .catch(() => {
                 // On failure clear the entry so the next subscribe call retries.
@@ -303,13 +299,7 @@ export function SyncBridge() {
       prevTimerIds = currentIds;
     });
 
-    function onTabHidden() {
-      if (document.visibilityState === "hidden") forceFlushRunningTimers();
-    }
-    document.addEventListener("visibilitychange", onTabHidden);
-
     return () => {
-      document.removeEventListener("visibilitychange", onTabHidden);
       machSub.unsubscribe();
       conn.disconnect();
     };

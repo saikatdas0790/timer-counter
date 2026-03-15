@@ -16,4 +16,5 @@ export default {
   currentCount: __t.i32(),
   remainingTimeSeconds: __t.u32(),
   timerState: __t.string(),
+  timerStartedAtMs: __t.u64(),
 };
